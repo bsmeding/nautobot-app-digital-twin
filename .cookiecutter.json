@@ -1,0 +1,29 @@
+{
+    "cookiecutter": {
+        "codeowner_github_usernames": "bsmeding",
+        "full_name": "b@rtsmeding IT",
+        "email": "b@rtsmeding.nl",
+        "github_org": "bsmeding",
+        "app_name": "nautobot_digital_twin",
+        "verbose_name": "Nautobot Digital Twin",
+        "app_slug": "nautobot-digital-twin",
+        "project_slug": "nautobot-app-nautobot-digital-twin",
+        "repo_url": "https://github.com/bsmeding/nautobot-app-nautobot-digital-twin",
+        "base_url": "nautobot-digital-twin",
+        "camel_name": "NautobotDigitalTwin",
+        "project_short_description": "Nautobot Digital Twin",
+        "model_class_name": "NautobotDigitalTwinExampleModel",
+        "open_source_license": "Apache-2.0",
+        "docs_base_url": "https://netdevops.it",
+        "docs_app_url": "https://netdevops.it/projects/nautobot-digital-twin/",
+        "_extensions": [
+            "local_extensions.camel_case_to_kebab",
+            "local_extensions.camel_case_to_words",
+            "local_extensions.NautobotVersions"
+        ],
+        "_template": "https://github.com/nautobot/cookiecutter-nautobot-app.git",
+        "_output_dir": "/Users/bsmeding/git/NAUTOBOT",
+        "_repo_dir": "/Users/bsmeding/.cookiecutters/cookiecutter-nautobot-app/nautobot-app",
+        "_checkout": null
+    }
+}

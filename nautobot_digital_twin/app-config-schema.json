@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "BACKEND": {
+      "type": "string",
+      "default": "containerlab",
+      "description": "Active digital twin backend (e.g. containerlab)."
+    },
+    "BACKEND_URLS": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "default": {},
+      "description": "URL per backend name when the backend runs on a separate host."
+    },
+    "LOCATION_TYPE_NAME": {
+      "type": "string",
+      "default": "Site",
+      "description": "Location type name where the Digital Twin button is shown (Nautobot 2+: no slug)."
+    }
+  },
+  "additionalProperties": false
+}
