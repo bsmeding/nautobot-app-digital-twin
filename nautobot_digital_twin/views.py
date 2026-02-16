@@ -16,12 +16,5 @@ class DigitalTwinDeploymentUIViewSet(NautobotUIViewSet):
     queryset = models.DigitalTwinDeployment.objects.all()
     serializer_class = serializers.DigitalTwinDeploymentSerializer
     table_class = tables.DigitalTwinDeploymentTable
-    object_detail_content = ObjectDetailContent(
-        panels=[
-            ObjectFieldsPanel(
-                weight=100,
-                section=SectionChoices.LEFT_HALF,
-                fields="__all__",
-            ),
-        ],
-    )
+    # Detail view uses custom template
+    # templates/nautobot_digital_twin/digitaltwindeployment_retrieve.html

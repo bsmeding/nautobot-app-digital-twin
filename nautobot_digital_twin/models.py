@@ -62,6 +62,34 @@ class DigitalTwinDeployment(PrimaryModel):
     def __str__(self):
         return self.name
 
+    @property
+    def remote_topology_path(self):
+        """
+        Path to the topology file on the remote containerlab host for this deployment.
+
+        Mirrors the logic in the containerlab backend:
+        ~/{CONTAINERLAB_REMOTE_TOPOLOGY_DIR}/{site.name}/{site.name}.clab.yaml
+        """
+        from nautobot_digital_twin.plugin_config import get_plugin_config  # pylint:disable=import-outside-toplevel
+
+        cfg = get_plugin_config()
+        subdir = (cfg.get("CONTAINERLAB_REMOTE_TOPOLOGY_DIR") or "nautobot").strip("/")
+        return f"~/{subdir}/{self.location.name}/{self.location.name}.clab.yaml"
+
+    @property
+    def mermaid_topology(self):
+        """
+        Mermaid graph description of the current Location topology.
+
+        Uses the same devices/cables as the containerlab topology builder,
+        but simplified to device-to-device edges for easy visualization.
+        """
+        from nautobot_digital_twin.topology import (  # pylint:disable=import-outside-toplevel
+            build_mermaid_topology,
+        )
+
+        return build_mermaid_topology(self.location)
+
 # If you want to choose a specific model to overload in your class declaration, please reference the following documentation:
 # how to chose a database model: https://docs.nautobot.com/projects/core/en/stable/plugins/development/#database-models
 # If you want to use the extras_features decorator please reference the following documentation

@@ -7,6 +7,7 @@ import paramiko
 
 from nautobot.dcim.models import Device
 from nautobot_digital_twin.plugin_config import get_plugin_config
+from nautobot_digital_twin.secrets_utils import get_credentials_from_secrets_group
 from nautobot_digital_twin.topology import build_containerlab_yaml, get_required_images_for_location
 
 from .base import DigitalTwinBackend
@@ -14,17 +15,34 @@ from .base import DigitalTwinBackend
 logger = logging.getLogger(__name__)
 
 
+def _get_ssh_access_type():
+    """Return the SSH access type constant (handles Nautobot version differences)."""
+    try:
+        from nautobot.extras.choices import SecretsGroupAccessTypeChoices
+        return getattr(SecretsGroupAccessTypeChoices, "TYPE_SSH", "ssh")
+    except (ImportError, AttributeError):
+        return "ssh"
+
+
 class ContainerlabBackend(DigitalTwinBackend):
     """Containerlab backend; uses backend_url from app config BACKEND_URLS if set."""
 
     def get_connection_params(self):
-        """Return (host, port, user, password, key_path) from plugin config. Does not open a connection."""
+        """Return (host, port, user, password, key_path) from plugin config or Secrets Group."""
         cfg = get_plugin_config()
         host = cfg["CONTAINERLAB_SSH_HOST"]
         port = cfg.get("CONTAINERLAB_SSH_PORT", 22)
         user = cfg.get("CONTAINERLAB_SSH_USER", "clab")
         password = cfg.get("CONTAINERLAB_SSH_PASSWORD", "clab")
         key_path = cfg.get("CONTAINERLAB_SSH_KEY_PATH", "")
+
+        secrets_group = (cfg.get("CONTAINERLAB_SSH_CREDENTIALS_SECRETS_GROUP") or "").strip()
+        if secrets_group:
+            creds = get_credentials_from_secrets_group(secrets_group, _get_ssh_access_type())
+            if creds:
+                user, password = creds
+                logger.debug("Using SSH credentials from Secrets Group '%s'", secrets_group)
+
         return host, port, user, password, key_path
 
     def _run_remote(self, command: str, timeout: int = None):
@@ -183,8 +201,13 @@ class ContainerlabBackend(DigitalTwinBackend):
         Get intended configs from Golden Config, upload them to the containerlab server
         in the site directory, and return device_startup_configs dict for the topology builder.
         Config files are placed next to the topology file so startup-config can use relative paths.
+        REMOVE_CONFIG_LINES patterns are applied before upload (e.g. remove RADIUS, management iface).
         """
         from nautobot_digital_twin.golden_config_intended import get_device_intended_config
+        from nautobot_digital_twin.config_filter import filter_config_remove_blocks
+
+        cfg = get_plugin_config()
+        remove_patterns = cfg.get("REMOVE_CONFIG_LINES") or []
 
         devices = list(Device.objects.filter(location=site).order_by("name"))
         device_startup_configs = {}
@@ -193,6 +216,9 @@ class ContainerlabBackend(DigitalTwinBackend):
             if not config_content:
                 log("No intended config for %s; node will boot without startup-config.", device.name)
                 continue
+            if remove_patterns:
+                config_content = filter_config_remove_blocks(config_content, remove_patterns)
+                log("Filtered intended config for %s (REMOVE_CONFIG_LINES: %s)", device.name, remove_patterns)
             filename = f"{device.name}.cfg"
             try:
                 self._write_remote_site_file(site, filename, config_content)
@@ -217,6 +243,24 @@ class ContainerlabBackend(DigitalTwinBackend):
             if log_fn and exit_status != 0:
                 log_fn("Image not found on containerlab server: %s", image)
         return (len(missing) == 0), missing
+
+    def _pull_missing_images(self, images, log_fn=None):
+        """
+        Attempt to pull each image on the containerlab server via docker pull.
+        Returns (True, []) if all pulls succeeded, (False, [failed_list]) if any failed.
+        """
+        if not images:
+            return True, []
+        failed = []
+        for image in sorted(images):
+            if log_fn:
+                log_fn("Pulling image %s...", image)
+            exit_status, out, err = self._run_remote(f"docker pull '{image}'")
+            if exit_status != 0:
+                failed.append(image)
+                if log_fn:
+                    log_fn("Failed to pull %s: %s", image, err.strip() or out.strip() or "unknown error")
+        return (len(failed) == 0), failed
 
     def deploy_site(self, site, job=None, config_source="empty_config"):
         """Deploy digital twin: generate topology, upload to server, run containerlab deploy.
@@ -248,9 +292,19 @@ class ContainerlabBackend(DigitalTwinBackend):
             log("Checking required container images on server: %s", ", ".join(sorted(required_images)))
             ok, missing = self._check_images_exist_on_server(required_images, log)
             if not ok:
-                msg = "Missing container image(s) on containerlab server: %s. Pull them (e.g. docker pull <image>) or adjust CONTAINERLAB_PLATFORM_MAP." % ", ".join(missing)
-                log(msg)
-                return 1, "", msg
+                log("Attempting to pull missing image(s): %s", ", ".join(missing))
+                pull_ok, pull_failed = self._pull_missing_images(missing, log)
+                if not pull_ok:
+                    msg = "Failed to pull image(s): %s. Check network access and image name, or adjust CONTAINERLAB_PLATFORM_MAP." % ", ".join(pull_failed)
+                    log(msg)
+                    return 1, "", msg
+                # Re-check that images are now present (pull may have succeeded)
+                ok, still_missing = self._check_images_exist_on_server(missing, log)
+                if not ok:
+                    msg = "Image(s) still missing after pull: %s. Adjust CONTAINERLAB_PLATFORM_MAP." % ", ".join(still_missing)
+                    log(msg)
+                    return 1, "", msg
+                log("Successfully pulled missing image(s).")
 
         # Optionally write to Nautobot local path (DIGITAL_TWIN_ROOT) for inspection
         cfg = get_plugin_config()
@@ -270,11 +324,22 @@ class ContainerlabBackend(DigitalTwinBackend):
         log("Uploading topology to containerlab server...")
         self._upload_topology(site, yaml_content)
         path = self._remote_topology_path(site)
-        cmd = f"containerlab deploy -t {path} --reconfigure"
+        # cd to topology dir so startup-config relative paths (e.g. leaf1.cfg) resolve correctly
+        topo_dir = f"~/{self._remote_topology_subdir()}/{site.name}"
+        topo_file = f"{site.name}.clab.yaml"
+        cmd = f"cd {topo_dir} && containerlab deploy -t {topo_file} --reconfigure"
         log("Running containerlab deploy (command timeout from config)...")
         return self._run_remote(cmd)
 
     def destroy_site(self, site):
         path = self._remote_topology_path(site)
-        cmd = f"containerlab destroy -t {path}"
-        return self._run_remote(cmd)
+        # 1. Tear down containers
+        exit_status, out, err = self._run_remote(f"containerlab destroy -t {path}")
+        # 2. Remove site folder (topology + config files) from backend when DELETE_CONFIG_AFTER_DESTROY
+        cfg = get_plugin_config()
+        if cfg.get("DELETE_CONFIG_AFTER_DESTROY", True):
+            site_dir = f"~/{self._remote_topology_subdir()}/{site.name}"
+            rm_status, rm_out, rm_err = self._run_remote(f"rm -rf {site_dir}")
+            if rm_status != 0:
+                logger.warning("Could not remove site dir %s on backend: %s", site_dir, rm_err or rm_out)
+        return exit_status, out, err

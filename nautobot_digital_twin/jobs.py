@@ -223,7 +223,11 @@ class StartDigitalTwinJob(Job):
 
 
 class StartDigitalTwinJobButtonReceiver(JobButtonReceiver):
-    """Start digital twin for the current Location. Use as a Job Button on Location detail."""
+    """Start digital twin for the current Location. Use as a Job Button on Location detail.
+
+    JobButtonReceiver only receives object_pk and object_model_name from the button;
+    do not add ObjectVar/ChoiceVar or the job will not start when the button is clicked.
+    """
 
     class Meta:
         name = "Start Digital Twin (Job Button)"
@@ -232,17 +236,21 @@ class StartDigitalTwinJobButtonReceiver(JobButtonReceiver):
         soft_time_limit = 600
         time_limit = 660
 
-    location = ObjectVar(
-        model=Location,
-        description="Location (set automatically when run from Job Button)",
-    )
-    config_source = ChoiceVar(
-        choices=CONFIG_SOURCE_CHOICES,
-        default="empty_config",
-        description="Config to load: empty or intended (from Golden Config, if installed).",
-    )
+    def run(self, object_pk, object_model_name, **kwargs):
+        """Resolve Location from object_pk/object_model_name and run deploy (empty config)."""
+        from django.contrib.contenttypes.models import ContentType
 
-    def run(self, location, config_source, **kwargs):
+        ct = ContentType.objects.get_by_natural_key(
+            *object_model_name.split(".", 1)
+            if "." in object_model_name
+            else ("dcim", object_model_name)
+        )
+        location = ct.get_object_for_this_type(pk=object_pk)
+        if not isinstance(location, Location):
+            self.logger.error("Job Button expects a Location, got %s", type(location).__name__)
+            raise ValueError(f"Expected Location, got {type(location).__name__}")
+        # Use intended config when Golden Config is available; otherwise empty
+        config_source = "intended_config" if "intended_config" in (c[0] for c in CONFIG_SOURCE_CHOICES) else "empty_config"
         _run_digital_twin_deploy(self, location, config_source=config_source)
 
 
@@ -271,7 +279,11 @@ class StopDigitalTwinJob(Job):
 
 
 class StopDigitalTwinJobButtonReceiver(JobButtonReceiver):
-    """Stop digital twin for the current Location. Use as a Job Button on Location detail."""
+    """Stop digital twin for the current Location. Use as a Job Button on Location detail.
+
+    JobButtonReceiver only receives object_pk and object_model_name from the button;
+    do not add ObjectVar or the job will not start when the button is clicked.
+    """
 
     class Meta:
         name = "Stop Digital Twin (Job Button)"
@@ -280,12 +292,19 @@ class StopDigitalTwinJobButtonReceiver(JobButtonReceiver):
         soft_time_limit = 300
         time_limit = 360
 
-    location = ObjectVar(
-        model=Location,
-        description="Location (set automatically when run from Job Button)",
-    )
+    def run(self, object_pk, object_model_name, **kwargs):
+        """Resolve Location from object_pk/object_model_name and run destroy."""
+        from django.contrib.contenttypes.models import ContentType
 
-    def run(self, location, **kwargs):
+        ct = ContentType.objects.get_by_natural_key(
+            *object_model_name.split(".", 1)
+            if "." in object_model_name
+            else ("dcim", object_model_name)
+        )
+        location = ct.get_object_for_this_type(pk=object_pk)
+        if not isinstance(location, Location):
+            self.logger.error("Job Button expects a Location, got %s", type(location).__name__)
+            raise ValueError(f"Expected Location, got {type(location).__name__}")
         _run_digital_twin_destroy(self, location)
 
 

@@ -52,6 +52,33 @@ When developing with the app mounted into a Nautobot Docker Compose stack:
    Without this, jobs appear in the UI but fail with *"Job code for this job is not currently installed or loadable"* when run (the worker cannot import the job class).
 4. Run `nautobot-server post_upgrade` and enable the job(s) in **Jobs → Jobs**, then restart services.
 
+## Configuration
+
+Configure the app in `nautobot_config.py` under `PLUGINS_CONFIG["nautobot_digital_twin"]`:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BACKEND` | `"containerlab"` | Backend to use for deployments. |
+| `BACKEND_URLS` | `{}` | Optional backend-specific URLs. |
+| `LOCATION_TYPE_NAME` | `"Site"` | Location type that shows the Digital Twin Start/Stop button (e.g. Site). |
+| `USE_STRICT_SOFTWARE_VERSION` | `True` | Use exact Nautobot software_version for container images (e.g. `ceos:4.34.2F`). When `False`, use default/latest tag. |
+| `CONTAINERLAB_SSH_HOST` | `"172.16.6.128"` | Hostname or IP of the containerlab server. |
+| `CONTAINERLAB_SSH_PORT` | `22` | SSH port for the containerlab server. |
+| `CONTAINERLAB_SSH_USER` | `"clab"` | SSH username (ignored when `CONTAINERLAB_SSH_CREDENTIALS_SECRETS_GROUP` is set). |
+| `CONTAINERLAB_SSH_PASSWORD` | `"clab"` | SSH password (ignored when `CONTAINERLAB_SSH_CREDENTIALS_SECRETS_GROUP` is set). |
+| `CONTAINERLAB_SSH_CREDENTIALS_SECRETS_GROUP` | `""` | Optional Nautobot Secrets Group name for SSH credentials (access type **SSH**, secret types Username/Password). When set, overrides `CONTAINERLAB_SSH_USER` and `CONTAINERLAB_SSH_PASSWORD`. |
+| `CONTAINERLAB_SSH_KEY_PATH` | `""` | Optional path to SSH private key file (used instead of password when set). |
+| `CONTAINERLAB_SSH_CONNECT_TIMEOUT` | `15` | SSH connection timeout in seconds. |
+| `CONTAINERLAB_COMMAND_TIMEOUT_MINUTES` | `5` | Timeout in minutes for remote containerlab commands. |
+| `CONTAINERLAB_REMOTE_TOPOLOGY_DIR` | `"nautobot"` | Subfolder under the SSH user's home for topology files (e.g. `~/nautobot/SiteName/`). |
+| `CONTAINERLAB_PLATFORM_MAP` | `{}` | Map Nautobot platform (lowercase) to containerlab image, e.g. `{"arista_eos": "ceos", "cisco_ios": "ios"}`. |
+| `DIGITAL_TWIN_ROOT` | `"/opt/nautobot/digital_twin"` | Local path on Nautobot where topology YAML files are written (for inspection). |
+| `DIGITAL_TWIN_JOB_TIMEOUT_MINUTES` | `10` | Job timeout in minutes. |
+| `DIGITAL_TWIN_AUTO_DESTROY_MINUTES` | `1440` | Auto-destroy deployments after this many minutes (0 = disable). Default 24h. |
+| `DIGITAL_TWIN_FALLBACK_AUTH_SECRETS_GROUP` | `""` | Optional Nautobot Secrets Group for digital twin fallback auth (access type **Generic**, Username/Password). Used when appending platform-specific fallback auth to intended configs. |
+| `REMOVE_CONFIG_LINES` | `[]` | Patterns to remove from intended config before deploy. When a line contains a pattern, that line and all indented children are removed. E.g. `["GigabitEthernet0/0", "radius-server"]` removes management interface and RADIUS blocks. |
+| `DELETE_CONFIG_AFTER_DESTROY` | `True` | When `True`, remove the site folder (topology + config files) from the containerlab server when the digital twin is destroyed. |
+
 ## Try it out!
 
 > Developer Note: Only keep this section if appropriate. Update link to correct sandbox.

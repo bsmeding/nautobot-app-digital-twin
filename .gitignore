@@ -1,3 +1,6 @@
+
+.temp
+
 # Ansible Retry Files
 *.retry
 

@@ -1,0 +1,69 @@
+{% extends 'generic/object_retrieve.html' %}
+{% load helpers %}
+
+{% block content_left_page %}
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <strong>Digital Twin Deployment</strong>
+        </div>
+        <table class="table table-hover panel-body attr-table">
+            <tr>
+                <td>Name</td>
+                <td>{{ object.name }}</td>
+            </tr>
+            <tr>
+                <td>Location</td>
+                <td>{{ object.location|hyperlinked_object }}</td>
+            </tr>
+            <tr>
+                <td>Status</td>
+                <td>{{ object.status|render_boolean }} ({{ object.get_status_display }})</td>
+            </tr>
+            <tr>
+                <td>Backend</td>
+                <td>{{ object.backend }}</td>
+            </tr>
+            <tr>
+                <td>Deployed at</td>
+                <td>{{ object.deployed_at }}</td>
+            </tr>
+            <tr>
+                <td>Auto-destroy at</td>
+                <td>{{ object.auto_destroy_at|placeholder }}</td>
+            </tr>
+            <tr>
+                <td>Destroyed at</td>
+                <td>{{ object.destroyed_at|placeholder }}</td>
+            </tr>
+            <tr>
+                <td>Deployed by</td>
+                <td>{{ object.deployed_by|hyperlinked_object }}</td>
+            </tr>
+            <tr>
+                <td>Remote topology path</td>
+                <td><code>{{ object.remote_topology_path }}</code></td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <strong>Topology Diagram</strong>
+        </div>
+        <div class="panel-body">
+            <!-- Mermaid graph rendered in-browser -->
+            <script src="https://unpkg.com/mermaid@10.9.1/dist/mermaid.min.js"></script>
+            <script>
+                mermaid.initialize({ startOnLoad: true });
+            </script>
+            <pre class="mermaid">
+{{ object.mermaid_topology|safe }}
+            </pre>
+        </div>
+    </div>
+{% endblock content_left_page %}
+
+{% block content_right_page %}
+    {{ block.super }}
+{% endblock content_right_page %}
+
