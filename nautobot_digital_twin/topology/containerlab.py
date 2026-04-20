@@ -270,13 +270,13 @@ def get_required_images_for_location(location, device_filter=None):
 def build_mermaid_topology(location):
     """
     Build a Mermaid graph description for the given Location.
-    Edges include interface labels (e.g. "Ethernet1 -- Ethernet1") so the diagram is informative.
+    Edges include interface labels (e.g. "Ethernet1:Ethernet1") so the diagram is informative.
 
     Example output:
 
         graph LR
-          spine1 ---|"Ethernet1 -- Ethernet1"| leaf1
-          leaf1 ---|"Ethernet2 -- Ethernet1"| host1
+          "spine1" ---|"Ethernet1:Ethernet1"| "leaf1"
+          "leaf1" ---|"Ethernet2:Ethernet1"| "host1"
     """
     devices = list(Device.objects.filter(location=location).order_by("name"))
     if not devices:
@@ -314,12 +314,14 @@ def build_mermaid_topology(location):
     lines = ["graph LR"]
     if not edges:
         for name in sorted(device_names.values()):
-            lines.append(f"  {name}")
+            # Quote node names to handle hyphens and special characters
+            lines.append(f'  "{name}"')
     else:
         for key in sorted(edges):
             dev_a, dev_b, if_a, if_b = edges[key]
-            label = f"{if_a} -- {if_b}"
-            lines.append(f'  {dev_a} ---| "{label}" |{dev_b}')
+            # Use ":" as separator — avoid "--" which Mermaid parses as an edge marker
+            label = f"{if_a}:{if_b}"
+            lines.append(f'  "{dev_a}" ---|"{label}"| "{dev_b}"')
     return "\n".join(lines)
 
 
