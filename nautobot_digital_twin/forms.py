@@ -46,11 +46,26 @@ class NautobotDigitalTwinExampleModelFilterForm(NautobotFilterForm):
 
 
 class DigitalTwinDeploymentForm(NautobotModelForm):
-    """DigitalTwinDeployment view/edit form. Create records via Start Digital Twin job."""
+    """
+    Edit form for DigitalTwinDeployment.
+    Exposes only auto_destroy_at for editing — all other fields are set by the Start/Stop jobs.
+    """
 
     class Meta:
         model = models.DigitalTwinDeployment
-        fields = "__all__"
+        fields = ["auto_destroy_at"]
+        widgets = {
+            "auto_destroy_at": forms.DateTimeInput(
+                attrs={"type": "datetime-local"},
+                format="%Y-%m-%dT%H:%M",
+            ),
+        }
+        help_texts = {
+            "auto_destroy_at": (
+                "Date and time when this deployment will be automatically destroyed. "
+                "Clear to disable auto-destroy for this deployment."
+            ),
+        }
 
 
 class DigitalTwinDeploymentFilterForm(NautobotFilterForm):

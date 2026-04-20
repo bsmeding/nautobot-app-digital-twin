@@ -2,153 +2,108 @@
 
 from django.apps import apps as global_apps
 
+# Job buttons created on Location detail pages.
+# weight determines left-to-right order in the button group.
+_JOB_BUTTON_SPECS = [
+    {
+        "job_class_name": "StartDigitalTwinJobButtonReceiver",
+        "button_name": "Start Digital Twin",
+        "text": "Start Digital Twin",
+        "weight": 100,
+        "button_class": "primary",
+        "confirmation": True,
+    },
+    {
+        "job_class_name": "StopDigitalTwinJobButtonReceiver",
+        "button_name": "Stop Digital Twin",
+        "text": "Stop Digital Twin",
+        "weight": 101,
+        "button_class": "danger",
+        "confirmation": True,
+    },
+    {
+        "job_class_name": "CheckDigitalTwinHealthJob",
+        "button_name": "Check Digital Twin Health",
+        "text": "Check Health",
+        "weight": 102,
+        "button_class": "default",
+        "confirmation": False,
+    },
+    {
+        "job_class_name": "ValidateDigitalTwinConnectivityJob",
+        "button_name": "Validate Digital Twin Connectivity",
+        "text": "Ping Test",
+        "weight": 103,
+        "button_class": "info",
+        "confirmation": True,
+    },
+    {
+        "job_class_name": "PushIntendedConfigJobButtonReceiver",
+        "button_name": "Push Intended Config",
+        "text": "Push Intended Config",
+        "weight": 104,
+        "button_class": "info",
+        "confirmation": True,
+    },
+    {
+        "job_class_name": "ExecuteAndSendIntendedConfigJobButtonReceiver",
+        "button_name": "Execute and Send Intended Config",
+        "text": "Execute and Send Intended Config",
+        "weight": 105,
+        "button_class": "success",
+        "confirmation": True,
+    },
+]
+
 
 def create_default_job_buttons(apps=global_apps):
     """
-    Create default Job Button records for Location (Start/Stop Digital Twin) if they don't exist.
+    Create default Job Button records for Location (Start/Stop/HealthCheck/PingTest Digital Twin)
+    if they don't already exist. Safe to call multiple times.
 
-    This mirrors the pattern used by nautobot-app-golden-config:
-    - Look up Job records by job_class_name
-    - Create JobButton records pointing at those Jobs
-    - Associate them to the dcim.Location content type
-
-    Safe to call multiple times. Returns (created_count, skipped_no_job).
+    Returns (created_count, skipped_no_job).
     """
     Job = apps.get_model("extras", "Job")  # pylint: disable=invalid-name
     JobButton = apps.get_model("extras", "JobButton")  # pylint: disable=invalid-name
     ContentType = apps.get_model("contenttypes", "ContentType")  # pylint: disable=invalid-name
     Location = apps.get_model("dcim", "Location")  # pylint: disable=invalid-name
 
+    location_ct = ContentType.objects.get_for_model(Location)
     created_count = 0
     skipped_no_job = 0
 
-    # Look up the Job records by class name, like Golden Config does.
-    # Add Start button
-    try:
-        start_job = Job.objects.get(job_class_name="StartDigitalTwinJobButtonReceiver")
-    except Job.DoesNotExist:
-        start_job = None
-        skipped_no_job += 1
+    for spec in _JOB_BUTTON_SPECS:
+        try:
+            job_record = Job.objects.get(job_class_name=spec["job_class_name"])
+        except Job.DoesNotExist:
+            skipped_no_job += 1
+            continue
 
-    # Add Stop button
-    try:
-        stop_job = Job.objects.get(job_class_name="StopDigitalTwinJobButtonReceiver")
-    except Job.DoesNotExist:
-        stop_job = None
-        skipped_no_job += 1
-
-    # Add Push Intended Config button
-    try:
-        push_job = Job.objects.get(job_class_name="PushIntendedConfigJobButtonReceiver")
-    except Job.DoesNotExist:
-        push_job = None
-        skipped_no_job += 1
-
-    # Add Execute and Send Intended Config button
-    try:
-        execute_send_job = Job.objects.get(job_class_name="ExecuteAndSendIntendedConfigJobButtonReceiver")
-    except Job.DoesNotExist:
-        execute_send_job = None
-        skipped_no_job += 1
-
-    if not start_job and not stop_job and not push_job and not execute_send_job:
-        return created_count, skipped_no_job
-
-    location_ct = ContentType.objects.get_for_model(Location)
-
-    # Create Start Digital Twin button if it doesn't exist
-    if start_job:
-        jb_start, created = JobButton.objects.get_or_create(
-            name="Start Digital Twin",
+        jb, created = JobButton.objects.get_or_create(
+            name=spec["button_name"],
             defaults={
-                "text": "Start Digital Twin",
-                "job": start_job,
-                "weight": 100,
+                "text": spec["text"],
+                "job": job_record,
+                "weight": spec["weight"],
                 "group_name": "Nautobot Digital Twin",
-                "button_class": "primary",
-                "confirmation": True,
+                "button_class": spec["button_class"],
+                "confirmation": spec["confirmation"],
             },
         )
         if created:
-            jb_start.content_types.set([location_ct])
-            # In newer Nautobot versions JobButton has "enabled"; if present, turn it on.
-            if hasattr(jb_start, "enabled"):
-                jb_start.enabled = True
-                jb_start.save(update_fields=["enabled"])
-            created_count += 1
-
-    # Create Stop Digital Twin button if it doesn't exist
-    if stop_job:
-        jb_stop, created = JobButton.objects.get_or_create(
-            name="Stop Digital Twin",
-            defaults={
-                "text": "Stop Digital Twin",
-                "job": stop_job,
-                "weight": 101,
-                "group_name": "Nautobot Digital Twin",
-                "button_class": "danger",
-                "confirmation": True,
-            },
-        )
-        if created:
-            jb_stop.content_types.set([location_ct])
-            if hasattr(jb_stop, "enabled"):
-                jb_stop.enabled = True
-                jb_stop.save(update_fields=["enabled"])
-            created_count += 1
-
-    # Create Push Intended Config button if it doesn't exist
-    if push_job:
-        jb_push, created = JobButton.objects.get_or_create(
-            name="Push Intended Config",
-            defaults={
-                "text": "Push Intended Config",
-                "job": push_job,
-                "weight": 102,
-                "group_name": "Nautobot Digital Twin",
-                "button_class": "info",
-                "confirmation": True,
-            },
-        )
-        if created:
-            jb_push.content_types.set([location_ct])
-            if hasattr(jb_push, "enabled"):
-                jb_push.enabled = True
-                jb_push.save(update_fields=["enabled"])
-            created_count += 1
-
-    # Create Execute and Send Intended Config button if it doesn't exist
-    if execute_send_job:
-        jb_execute_send, created = JobButton.objects.get_or_create(
-            name="Execute and Send Intended Config",
-            defaults={
-                "text": "Execute and Send Intended Config",
-                "job": execute_send_job,
-                "weight": 103,
-                "group_name": "Nautobot Digital Twin",
-                "button_class": "success",
-                "confirmation": True,
-            },
-        )
-        if created:
-            jb_execute_send.content_types.set([location_ct])
-            if hasattr(jb_execute_send, "enabled"):
-                jb_execute_send.enabled = True
-                jb_execute_send.save(update_fields=["enabled"])
+            jb.content_types.set([location_ct])
+            if hasattr(jb, "enabled"):
+                jb.enabled = True
+                jb.save(update_fields=["enabled"])
             created_count += 1
 
     return created_count, skipped_no_job
-
-# ToDo: Add traffice generator button
 
 
 
 def post_migrate_create_job_buttons(sender, apps=global_apps, **kwargs):  # pylint: disable=unused-argument
     """
-    Callback for nautobot_database_ready -- create JobButton records.
-
-    Connected from NautobotDigitalTwinConfig.ready() using nautobot_database_ready,
-    so it runs once the database is ready and Jobs have been synced.
+    Callback for nautobot_database_ready — create JobButton records.
+    Connected from NautobotDigitalTwinConfig.ready() using nautobot_database_ready.
     """
     create_default_job_buttons(apps=apps)
-

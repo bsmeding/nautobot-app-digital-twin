@@ -29,6 +29,8 @@ class NautobotDigitalTwinConfig(NautobotAppConfig):
         "CONTAINERLAB_SSH_PORT": 22,
         "CONTAINERLAB_SSH_USER": "clab",
         "CONTAINERLAB_SSH_PASSWORD": "clab",
+        # Optional: path to SSH private key file. When set (and file exists), used instead of password.
+        "CONTAINERLAB_SSH_KEY_PATH": "",
         # Optional: name of a Nautobot Secrets Group for SSH credentials (access type SSH, secret types Username/Password).
         # When set, overrides CONTAINERLAB_SSH_USER and CONTAINERLAB_SSH_PASSWORD.
         "CONTAINERLAB_SSH_CREDENTIALS_SECRETS_GROUP": "",
@@ -81,7 +83,6 @@ class NautobotDigitalTwinConfig(NautobotAppConfig):
         "DELETE_CONFIG_AFTER_DESTROY": True,
         # Platform-specific config for "Push intended config" job: where to copy config inside container
         # and optional reload command. Dict: platform_key -> {"container_path": str, "reload_command": str}.
-        # Users can override or extend via PLATFORM_PUSH_CONFIG in nautobot_config.py.
         "PLATFORM_PUSH_CONFIG": {
             "arista_eos": {
                 "container_path": "/mnt/flash/startup-config",
@@ -89,9 +90,11 @@ class NautobotDigitalTwinConfig(NautobotAppConfig):
             },
             "cisco_ios": {
                 "container_path": "/config/startup-config.cfg",
-                "reload_command": "",  # Copy only; config used on next boot
+                "reload_command": "",
             },
         },
+        # Maximum number of simultaneously active deployments per user (0 = unlimited).
+        "MAX_DEPLOYMENTS_PER_USER": 0,
     }
     docs_view_name = "plugins:nautobot_digital_twin:docs"
     searchable_models = ["digitaltwindeployment"]

@@ -5,18 +5,20 @@ from django.urls import path
 from django.views.generic import RedirectView
 from nautobot.apps.urls import NautobotUIViewSetRouter
 
-
 from nautobot_digital_twin import views
-
 
 app_name = "nautobot_digital_twin"
 router = NautobotUIViewSetRouter()
 
 router.register("digital-twin-deployments", views.DigitalTwinDeploymentUIViewSet)
 
-
 urlpatterns = [
     path("docs/", RedirectView.as_view(url=static("nautobot_digital_twin/docs/index.html")), name="docs"),
+    path(
+        "digital-twin-deployments/<uuid:pk>/topology.yaml",
+        views.DigitalTwinTopologyExportView.as_view(),
+        name="digitaltwindeployment_topology_export",
+    ),
 ]
 
 urlpatterns += router.urls
