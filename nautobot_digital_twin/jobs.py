@@ -1,12 +1,12 @@
 from datetime import datetime, timedelta, timezone
 
 from django.conf import settings
-from nautobot.apps.jobs import Job, JobButtonReceiver, ObjectVar, ChoiceVar, register_jobs
+from nautobot.apps.jobs import Job, JobButtonReceiver, ObjectVar, ChoiceVar, StringVar, register_jobs
 from nautobot.dcim.models import Location
 
 from nautobot_digital_twin.backends import get_available_backend_names
 
-# Config source choices: add "intended_config" only when Golden Config plugin is installed
+
 def _get_config_source_choices():
     choices = [("empty_config", "Empty config")]
     if getattr(settings, "PLUGINS", None) and "nautobot_golden_config" in settings.PLUGINS:
@@ -16,12 +16,57 @@ def _get_config_source_choices():
 
 CONFIG_SOURCE_CHOICES = _get_config_source_choices()
 
+_ACTIVE_STATUSES = ["deploying", "deployed", "destroying"]
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+def _get_job_user(job):
+    """Return the user who initiated the job."""
+    user = getattr(job, "user", None)
+    if user is not None:
+        return user
+    job_result = getattr(job, "job_result", None)
+    if job_result is not None:
+        return getattr(job_result, "user", None)
+    return None
+
+
+def _create_deploying_record(job, location, backend_name):
+    """Create a DigitalTwinDeployment record with DEPLOYING status before the backend runs."""
+    from nautobot_digital_twin.models import DigitalTwinDeployment
+    from nautobot_digital_twin.plugin_config import get_plugin_config
+
+    now = datetime.now(timezone.utc)
+    cfg = get_plugin_config()
+    minutes = int(cfg.get("DIGITAL_TWIN_AUTO_DESTROY_MINUTES") or 0)
+    auto_destroy_at = (now + timedelta(minutes=minutes)) if minutes else None
+    deployed_by = _get_job_user(job)
+    name = f"{location.name} — {now.isoformat()}"
+    deployment = DigitalTwinDeployment.objects.create(
+        name=name,
+        location=location,
+        status=DigitalTwinDeployment.StatusChoices.DEPLOYING,
+        backend=backend_name,
+        deployed_at=now,
+        auto_destroy_at=auto_destroy_at,
+        deployed_by=deployed_by,
+    )
+    return deployment
+
+
+def _mark_deployment_deployed(deployment):
+    """Transition a DEPLOYING record to DEPLOYED."""
+    deployment.status = "deployed"
+    deployment.save(update_fields=["status"])
+
 
 def _run_digital_twin_deploy(job, location, backend_name=None, config_source="empty_config"):
-    """Shared logic: validate location type and call backend deploy.
-
-    backend_name: if set, use this backend; otherwise use BACKEND from config.
-    config_source: 'empty_config' or 'intended_config' (only when Golden Config is installed).
+    """
+    Shared deploy logic. Creates a DEPLOYING record first, then calls the backend.
+    On success sets status=DEPLOYED; on failure sets status=FAILED.
     """
     from nautobot_digital_twin.backends import get_backend
     from nautobot_digital_twin.models import DigitalTwinDeployment
@@ -37,31 +82,52 @@ def _run_digital_twin_deploy(job, location, backend_name=None, config_source="em
         )
         return
 
-    if DigitalTwinDeployment.objects.filter(
-        location=location, status=DigitalTwinDeployment.StatusChoices.DEPLOYED
-    ).exists():
+    if DigitalTwinDeployment.objects.filter(location=location, status__in=_ACTIVE_STATUSES).exists():
         job.logger.failure(
-            "Location '%s' already has an active digital twin deployment. Stop it first or wait for auto-destroy.",
+            "Location '%s' already has an active digital twin deployment. Stop it first.",
             location.name,
         )
         return
 
+    cfg = get_plugin_config()
+
+    # User quota check
+    max_per_user = int(cfg.get("MAX_DEPLOYMENTS_PER_USER") or 0)
+    if max_per_user:
+        current_user = _get_job_user(job)
+        if current_user:
+            user_active = DigitalTwinDeployment.objects.filter(
+                deployed_by=current_user,
+                status__in=["deploying", "deployed"],
+            ).count()
+            if user_active >= max_per_user:
+                job.logger.failure(
+                    "User '%s' has reached the maximum of %d active deployment(s). Stop one first.",
+                    current_user.username,
+                    max_per_user,
+                )
+                return
+
     if backend_name is None:
-        cfg = get_plugin_config()
         backend_name = cfg.get("BACKEND", "containerlab")
     job.logger.info("Using backend: %s", backend_name)
 
+    deployment = _create_deploying_record(job, location, backend_name)
+    job.logger.info("Created deployment record (status=deploying, pk=%s).", deployment.pk)
+
     try:
         backend = get_backend(backend_name)
-        job.logger.info("Backend obtained; generating topology, uploading, then deploying (may take several minutes).")
+        job.logger.info("Generating topology, uploading, and deploying (may take several minutes).")
         result = backend.deploy_site(location, job=job, config_source=config_source)
     except Exception as e:
         job.logger.failure("Deploy failed: %s", e)
+        deployment.status = "failed"
+        deployment.save(update_fields=["status"])
         raise
 
     if result is None:
-        job.logger.success("Digital Twin deployment triggered for %s", location.name)
-        _record_deployment_created(job, location, backend_name)
+        _mark_deployment_deployed(deployment)
+        job.logger.success("Digital Twin deployment triggered for %s.", location.name)
         return
 
     exit_status, out, err = result
@@ -72,71 +138,32 @@ def _run_digital_twin_deploy(job, location, backend_name=None, config_source="em
 
     if exit_status != 0:
         job.logger.failure(
-            "Remote command failed with exit status %s. stderr: %s",
-            exit_status,
-            err.strip() if err else "(none)",
+            "Remote command failed (exit %s). stderr: %s", exit_status, err.strip() if err else "(none)"
         )
         if err and "no such file or directory" in err.lower():
             job.logger.warning(
                 "Ensure the topology file exists on the containerlab server at "
-                "~/<CONTAINERLAB_REMOTE_TOPOLOGY_DIR>/<site>/<site>.clab.yaml (e.g. ~/nautobot/%s/%s.clab.yaml).",
-                location.name,
-                location.name,
+                "~/<CONTAINERLAB_REMOTE_TOPOLOGY_DIR>/<site>/<site>.clab.yaml."
             )
+        deployment.status = "failed"
+        deployment.save(update_fields=["status"])
         return
 
-    job.logger.success("Digital Twin deployment completed for location '%s'", location.name)
-    _record_deployment_created(job, location, backend_name)
-
-
-def _get_job_user(job):
-    """Return the user who initiated the job (from job.user or job_result.user)."""
-    user = getattr(job, "user", None)
-    if user is not None:
-        return user
-    job_result = getattr(job, "job_result", None)
-    if job_result is not None and hasattr(job_result, "user"):
-        return getattr(job_result, "user", None)
-    return None
-
-
-def _record_deployment_created(job, location, backend_name):
-    """Create a DigitalTwinDeployment record after successful deploy."""
-    from nautobot_digital_twin.models import DigitalTwinDeployment
-    from nautobot_digital_twin.plugin_config import get_plugin_config
-
-    now = datetime.now(timezone.utc)
-    cfg = get_plugin_config()
-    minutes = int(cfg.get("DIGITAL_TWIN_AUTO_DESTROY_MINUTES") or 0)
-    auto_destroy_at = (now + timedelta(minutes=minutes)) if minutes else None
-    deployed_by = _get_job_user(job)
-    deployment_name = f"{location.name} — {now.isoformat()}"
-    DigitalTwinDeployment.objects.create(
-        name=deployment_name,
-        location=location,
-        status=DigitalTwinDeployment.StatusChoices.DEPLOYED,
-        backend=backend_name,
-        deployed_at=now,
-        auto_destroy_at=auto_destroy_at,
-        deployed_by=deployed_by,
-    )
+    _mark_deployment_deployed(deployment)
+    job.logger.success("Digital Twin deployment completed for location '%s'.", location.name)
 
 
 def _run_digital_twin_destroy(job, location, backend_name=None, mark_destroyed_even_on_failure=False):
-    """Stop digital twin for location: call backend destroy and mark deployment destroyed.
-
-    If mark_destroyed_even_on_failure is True (e.g. for auto-destroy), we still mark the
-    deployment destroyed so we don't retry forever.
-    When not auto-destroy, only the user who deployed or a superuser may stop the deployment.
+    """
+    Shared destroy logic. Sets status=DESTROYING during teardown.
+    On success sets DESTROYED; on failure sets FAILED (or DESTROYED if mark_destroyed_even_on_failure).
     """
     from nautobot_digital_twin.backends import get_backend
     from nautobot_digital_twin.models import DigitalTwinDeployment
     from nautobot_digital_twin.plugin_config import get_plugin_config
 
     deployment = (
-        DigitalTwinDeployment.objects.filter(
-            location=location, status=DigitalTwinDeployment.StatusChoices.DEPLOYED
-        )
+        DigitalTwinDeployment.objects.filter(location=location, status__in=_ACTIVE_STATUSES)
         .order_by("-deployed_at")
         .first()
     )
@@ -148,9 +175,7 @@ def _run_digital_twin_destroy(job, location, backend_name=None, mark_destroyed_e
         current_user = _get_job_user(job)
         if deployment.deployed_by_id is not None:
             if current_user is None:
-                job.logger.failure(
-                    "Cannot determine who is running this job. Only the user who started the deployment or a superuser may stop it."
-                )
+                job.logger.failure("Cannot determine job user. Only the deployer or a superuser may stop it.")
                 return
             if current_user.pk != deployment.deployed_by_id and not getattr(current_user, "is_superuser", False):
                 job.logger.failure(
@@ -162,15 +187,23 @@ def _run_digital_twin_destroy(job, location, backend_name=None, mark_destroyed_e
     if backend_name is None:
         cfg = get_plugin_config()
         backend_name = cfg.get("BACKEND", "containerlab")
+
+    deployment.status = "destroying"
+    deployment.save(update_fields=["status"])
+    job.logger.info("Set deployment status to 'destroying'.")
+
     try:
         backend = get_backend(backend_name)
         result = backend.destroy_site(location)
     except Exception as e:
         job.logger.failure("Destroy failed: %s", e)
         if mark_destroyed_even_on_failure:
-            deployment.status = DigitalTwinDeployment.StatusChoices.DESTROYED
+            deployment.status = "destroyed"
             deployment.destroyed_at = datetime.now(timezone.utc)
-            deployment.save()
+            deployment.save(update_fields=["status", "destroyed_at"])
+        else:
+            deployment.status = "failed"
+            deployment.save(update_fields=["status"])
         raise
 
     if result is not None:
@@ -178,78 +211,68 @@ def _run_digital_twin_destroy(job, location, backend_name=None, mark_destroyed_e
         if exit_status != 0:
             job.logger.warning("Destroy command returned exit status %s: %s", exit_status, err or out)
             if not mark_destroyed_even_on_failure:
+                deployment.status = "failed"
+                deployment.save(update_fields=["status"])
                 return
 
     now = datetime.now(timezone.utc)
-    deployment.status = DigitalTwinDeployment.StatusChoices.DESTROYED
+    deployment.status = "destroyed"
     deployment.destroyed_at = now
-    deployment.save()
-    job.logger.success("Digital twin for location '%s' stopped and deployment record updated.", location.name)
+    deployment.save(update_fields=["status", "destroyed_at"])
+    job.logger.success("Digital twin for location '%s' stopped.", location.name)
 
 
-# Backend dropdown for manual job: list of (value, label), first is default
+# ---------------------------------------------------------------------------
+# Backend choices (computed once at module load)
+# ---------------------------------------------------------------------------
+
 _backend_names = get_available_backend_names()
 BACKEND_CHOICES = [(n, n) for n in _backend_names]
 DEFAULT_BACKEND = BACKEND_CHOICES[0][0] if BACKEND_CHOICES else "containerlab"
 
 
+# ---------------------------------------------------------------------------
+# Jobs
+# ---------------------------------------------------------------------------
+
 class StartDigitalTwinJob(Job):
-    """Start a digital twin for a chosen Location. Use from Jobs → Jobs (manual run)."""
+    """Start a digital twin for a chosen Location (manual run)."""
 
     class Meta:
         name = "Start Digital Twin (manual)"
         description = "Deploy a digital twin for the selected Location."
         commit_default = True
-        soft_time_limit = 600   # 10 min: raise SoftTimeLimitExceeded so job can fail cleanly
-        time_limit = 660        # 11 min: hard kill if still running
+        soft_time_limit = 600
+        time_limit = 660
 
-    backend = ChoiceVar(
-        choices=BACKEND_CHOICES,
-        default=DEFAULT_BACKEND,
-        description="Backend to use for deployment (e.g. containerlab).",
-    )
-    location = ObjectVar(
-        model=Location,
-        description="Location to start the digital twin for",
-    )
-    config_source = ChoiceVar(
-        choices=CONFIG_SOURCE_CHOICES,
-        default="empty_config",
-        description="Config to load: empty or intended (from Golden Config, if installed).",
-    )
+    backend = ChoiceVar(choices=BACKEND_CHOICES, default=DEFAULT_BACKEND,
+                        description="Backend to use for deployment.")
+    location = ObjectVar(model=Location, description="Location to deploy.")
+    config_source = ChoiceVar(choices=CONFIG_SOURCE_CHOICES, default="empty_config",
+                              description="Config source: empty or Golden Config intended.")
 
     def run(self, location, backend, config_source, **kwargs):
         _run_digital_twin_deploy(self, location, backend_name=backend, config_source=config_source)
 
 
 class StartDigitalTwinJobButtonReceiver(JobButtonReceiver):
-    """Start digital twin for the current Location. Use as a Job Button on Location detail.
-
-    JobButtonReceiver only receives object_pk and object_model_name from the button;
-    do not add ObjectVar/ChoiceVar or the job will not start when the button is clicked.
-    """
+    """Start digital twin for the current Location (Job Button on Location detail)."""
 
     class Meta:
         name = "Start Digital Twin (Job Button)"
-        description = "Deploy a digital twin for this Location (receives Location from button)."
+        description = "Deploy a digital twin for this Location."
         commit_default = True
         soft_time_limit = 600
         time_limit = 660
 
     def run(self, object_pk, object_model_name, **kwargs):
-        """Resolve Location from object_pk/object_model_name and run deploy (empty config)."""
         from django.contrib.contenttypes.models import ContentType
-
         ct = ContentType.objects.get_by_natural_key(
-            *object_model_name.split(".", 1)
-            if "." in object_model_name
-            else ("dcim", object_model_name)
+            *object_model_name.split(".", 1) if "." in object_model_name else ("dcim", object_model_name)
         )
         location = ct.get_object_for_this_type(pk=object_pk)
         if not isinstance(location, Location):
-            self.logger.error("Job Button expects a Location, got %s", type(location).__name__)
             raise ValueError(f"Expected Location, got {type(location).__name__}")
-        # Use intended config when Golden Config is available; otherwise empty
         config_source = "intended_config" if "intended_config" in (c[0] for c in CONFIG_SOURCE_CHOICES) else "empty_config"
         _run_digital_twin_deploy(self, location, config_source=config_source)
 
@@ -259,60 +282,274 @@ class StopDigitalTwinJob(Job):
 
     class Meta:
         name = "Stop Digital Twin (manual)"
-        description = "Destroy the digital twin for the selected Location and mark deployment as stopped."
+        description = "Destroy the digital twin for the selected Location."
         commit_default = True
         soft_time_limit = 300
         time_limit = 360
 
-    backend = ChoiceVar(
-        choices=BACKEND_CHOICES,
-        default=DEFAULT_BACKEND,
-        description="Backend used for the deployment (must match the one used to start).",
-    )
-    location = ObjectVar(
-        model=Location,
-        description="Location to stop the digital twin for",
-    )
+    backend = ChoiceVar(choices=BACKEND_CHOICES, default=DEFAULT_BACKEND,
+                        description="Backend used for the deployment.")
+    location = ObjectVar(model=Location, description="Location to stop.")
 
     def run(self, location, backend, **kwargs):
         _run_digital_twin_destroy(self, location, backend_name=backend)
 
 
 class StopDigitalTwinJobButtonReceiver(JobButtonReceiver):
-    """Stop digital twin for the current Location. Use as a Job Button on Location detail.
-
-    JobButtonReceiver only receives object_pk and object_model_name from the button;
-    do not add ObjectVar or the job will not start when the button is clicked.
-    """
+    """Stop digital twin for the current Location (Job Button on Location detail)."""
 
     class Meta:
         name = "Stop Digital Twin (Job Button)"
-        description = "Destroy the digital twin for this Location (receives Location from button)."
+        description = "Destroy the digital twin for this Location."
         commit_default = True
         soft_time_limit = 300
         time_limit = 360
 
     def run(self, object_pk, object_model_name, **kwargs):
-        """Resolve Location from object_pk/object_model_name and run destroy."""
         from django.contrib.contenttypes.models import ContentType
-
         ct = ContentType.objects.get_by_natural_key(
-            *object_model_name.split(".", 1)
-            if "." in object_model_name
-            else ("dcim", object_model_name)
+            *object_model_name.split(".", 1) if "." in object_model_name else ("dcim", object_model_name)
         )
         location = ct.get_object_for_this_type(pk=object_pk)
         if not isinstance(location, Location):
-            self.logger.error("Job Button expects a Location, got %s", type(location).__name__)
             raise ValueError(f"Expected Location, got {type(location).__name__}")
         _run_digital_twin_destroy(self, location)
 
 
-class AutoDestroyExpiredDigitalTwinJob(Job):
-    """Destroy all digital twin deployments that have passed their auto_destroy_at time.
+class RedeployDigitalTwinJob(Job):
+    """
+    Re-run containerlab deploy for an existing active deployment.
+    Re-reads Nautobot DCIM data and regenerates the topology; useful after adding/removing devices.
+    Does NOT create a new deployment record — it updates the existing one's deployed_at timestamp.
+    """
 
-    Schedule this job periodically (e.g. every 15 minutes via Jobs > Schedules) so that
-    deployments are torn down after DIGITAL_TWIN_AUTO_DESTROY_MINUTES.
+    class Meta:
+        name = "Redeploy Digital Twin (update existing)"
+        description = (
+            "Regenerate topology and re-run containerlab deploy --reconfigure for an active deployment. "
+            "Use after adding/removing devices or cables in Nautobot."
+        )
+        commit_default = True
+        soft_time_limit = 600
+        time_limit = 660
+
+    location = ObjectVar(model=Location, description="Location with an active deployment to update.")
+    config_source = ChoiceVar(choices=CONFIG_SOURCE_CHOICES, default="empty_config",
+                              description="Config source for the redeployed nodes.")
+
+    def run(self, location, config_source, **kwargs):
+        from nautobot_digital_twin.backends import get_backend
+        from nautobot_digital_twin.models import DigitalTwinDeployment
+
+        deployment = (
+            DigitalTwinDeployment.objects.filter(location=location, status="deployed")
+            .order_by("-deployed_at")
+            .first()
+        )
+        if not deployment:
+            self.logger.failure(
+                "No active (deployed) digital twin found for '%s'. Use Start Digital Twin instead.",
+                location.name,
+            )
+            return
+
+        self.logger.info("Redeploying digital twin for '%s' (backend: %s).", location.name, deployment.backend)
+        try:
+            backend = get_backend(deployment.backend)
+            result = backend.deploy_site(location, job=self, config_source=config_source)
+        except Exception as e:
+            self.logger.failure("Redeploy failed: %s", e)
+            raise
+
+        if result is None:
+            self.logger.success("Redeployment triggered for '%s'.", location.name)
+            deployment.deployed_at = datetime.now(timezone.utc)
+            deployment.save(update_fields=["deployed_at"])
+            return
+
+        exit_status, out, err = result
+        if out:
+            self.logger.info("stdout: %s", out.strip())
+        if err:
+            self.logger.warning("stderr: %s", err.strip())
+
+        if exit_status == 0:
+            deployment.deployed_at = datetime.now(timezone.utc)
+            deployment.save(update_fields=["deployed_at"])
+            self.logger.success("Redeployment completed for '%s'.", location.name)
+        else:
+            self.logger.failure("Redeployment failed (exit %s).", exit_status)
+
+
+class CheckDigitalTwinHealthJob(Job):
+    """
+    Check whether a deployed digital twin is actually running on the containerlab server.
+    Runs 'containerlab inspect' and reports node states.
+    """
+
+    class Meta:
+        name = "Check Digital Twin Health"
+        description = "SSH to containerlab and inspect the running topology for this Location."
+        commit_default = False
+        soft_time_limit = 120
+        time_limit = 150
+
+    location = ObjectVar(model=Location, description="Location to check.")
+
+    def run(self, location, **kwargs):
+        from nautobot_digital_twin.backends import get_backend
+        from nautobot_digital_twin.models import DigitalTwinDeployment
+
+        deployment = (
+            DigitalTwinDeployment.objects.filter(location=location, status__in=_ACTIVE_STATUSES)
+            .order_by("-deployed_at")
+            .first()
+        )
+        if not deployment:
+            self.logger.warning("No active deployment found for '%s'.", location.name)
+            return
+
+        backend = get_backend(deployment.backend)
+
+        ok, message = backend.check_health()
+        if not ok:
+            self.logger.failure("Containerlab server unreachable: %s", message)
+            return
+        self.logger.info("Server OK: %s", message)
+
+        exit_status, out, err = backend.get_topology_status(location)
+        if exit_status == 0:
+            self.logger.success("Topology for '%s' is running:\n%s", location.name, out.strip() or "(no output)")
+        else:
+            self.logger.failure(
+                "Could not inspect topology for '%s': %s",
+                location.name,
+                (err.strip() or out.strip()) or "(no output)",
+            )
+
+
+class ValidateDigitalTwinConnectivityJob(Job):
+    """
+    Full-mesh ping test for a deployed digital twin.
+    For every device that has a primary IPv4 address in Nautobot, this job pings all other
+    such devices from inside the running containers (via docker exec on the containerlab server).
+    Results are logged per pair with pass/fail, and a final summary is reported.
+    """
+
+    class Meta:
+        name = "Validate Digital Twin Connectivity (ping)"
+        description = (
+            "Run a full-mesh ping test between all devices in an active digital twin. "
+            "Requires each device to have a primary_ip4 in Nautobot. "
+            "Uses 'docker exec <container> ping' on the containerlab server."
+        )
+        commit_default = False
+        soft_time_limit = 600
+        time_limit = 660
+
+    location = ObjectVar(model=Location, description="Location with an active deployment.")
+    ping_count = ChoiceVar(
+        choices=[("3", "3"), ("5", "5"), ("10", "10")],
+        default="3",
+        description="Number of ICMP packets to send per ping test.",
+    )
+
+    def run(self, location, ping_count="3", **kwargs):
+        from nautobot_digital_twin.backends import get_backend
+        from nautobot_digital_twin.models import DigitalTwinDeployment
+
+        deployment = (
+            DigitalTwinDeployment.objects.filter(location=location, status="deployed")
+            .order_by("-deployed_at")
+            .first()
+        )
+        if not deployment:
+            self.logger.failure(
+                "No active (deployed) digital twin found for '%s'. Deploy first.", location.name
+            )
+            return
+
+        # Derive lab name using the same algorithm as build_containerlab_yaml
+        import re as _re
+        lab_name = _re.sub(r"[^a-z0-9-]", "-", location.name.lower()).strip("-") or "lab"
+
+        # Collect devices with a primary IPv4
+        from nautobot.dcim.models import Device as _Device
+        devices = list(_Device.objects.filter(location=location).select_related("primary_ip4"))
+
+        testable = []
+        for dev in devices:
+            if dev.primary_ip4:
+                ip_str = str(dev.primary_ip4.address.ip)
+                testable.append((dev, ip_str))
+
+        if not testable:
+            self.logger.warning(
+                "No devices with primary_ip4 at '%s'. Assign primary IPs in Nautobot to enable ping tests.",
+                location.name,
+            )
+            return
+
+        self.logger.info(
+            "Starting full-mesh ping test: %d device(s) with IPs at '%s' (lab: %s, pings: %s).",
+            len(testable), location.name, lab_name, ping_count,
+        )
+
+        backend = get_backend(deployment.backend)
+        passed = 0
+        failed = 0
+        count = int(ping_count)
+
+        for src_dev, _ in testable:
+            src_container = backend._container_name(lab_name, src_dev.name)
+            for dst_dev, dst_ip in testable:
+                if src_dev.pk == dst_dev.pk:
+                    continue
+                try:
+                    exit_status, out, err = backend.ping_from_container(src_container, dst_ip, count=count)
+                except Exception as e:
+                    self.logger.warning(
+                        "FAIL  %s -> %s (%s): error executing ping: %s",
+                        src_dev.name, dst_dev.name, dst_ip, e,
+                    )
+                    failed += 1
+                    continue
+
+                if exit_status == 0:
+                    self.logger.info(
+                        "PASS  %s -> %s (%s)", src_dev.name, dst_dev.name, dst_ip
+                    )
+                    passed += 1
+                else:
+                    # Extract loss line from ping output for a concise failure message
+                    loss_line = next(
+                        (ln.strip() for ln in (out + err).splitlines() if "packet loss" in ln.lower()),
+                        err.strip() or out.strip() or "no output",
+                    )
+                    self.logger.warning(
+                        "FAIL  %s -> %s (%s): %s",
+                        src_dev.name, dst_dev.name, dst_ip, loss_line,
+                    )
+                    failed += 1
+
+        total = passed + failed
+        if total == 0:
+            self.logger.warning("No ping tests were executed.")
+            return
+
+        if failed == 0:
+            self.logger.success("All %d ping test(s) passed.", total)
+        else:
+            self.logger.failure(
+                "%d/%d ping test(s) failed. Check container status and IP reachability.",
+                failed, total,
+            )
+
+
+class AutoDestroyExpiredDigitalTwinJob(Job):
+    """
+    Destroy all digital twin deployments that have passed their auto_destroy_at time.
+    Schedule this job periodically (e.g. every 15 minutes via Jobs > Schedules).
     """
 
     class Meta:
@@ -332,7 +569,7 @@ class AutoDestroyExpiredDigitalTwinJob(Job):
 
         now = datetime.now(timezone.utc)
         qs = DigitalTwinDeployment.objects.filter(
-            status=DigitalTwinDeployment.StatusChoices.DEPLOYED,
+            status="deployed",
             auto_destroy_at__isnull=False,
             auto_destroy_at__lte=now,
         )
@@ -346,16 +583,21 @@ class AutoDestroyExpiredDigitalTwinJob(Job):
         backend = get_backend(backend_name)
         for deployment in qs:
             location = deployment.location
-            self.logger.info("Auto-destroying deployment for location '%s' (auto_destroy_at was %s).", location.name, deployment.auto_destroy_at)
+            self.logger.info(
+                "Auto-destroying '%s' (auto_destroy_at was %s).", location.name, deployment.auto_destroy_at
+            )
             try:
                 result = backend.destroy_site(location)
                 if result is not None and result[0] != 0:
-                    self.logger.warning("Destroy for %s returned exit status %s: %s", location.name, result[0], result[2] or result[1])
+                    self.logger.warning(
+                        "Destroy for '%s' returned exit status %s: %s",
+                        location.name, result[0], result[2] or result[1],
+                    )
             except Exception as e:
-                self.logger.warning("Destroy for %s failed: %s", location.name, e)
-            deployment.status = DigitalTwinDeployment.StatusChoices.DESTROYED
+                self.logger.warning("Destroy for '%s' failed: %s", location.name, e)
+            deployment.status = "destroyed"
             deployment.destroyed_at = now
-            deployment.save()
+            deployment.save(update_fields=["status", "destroyed_at"])
         self.logger.success("Marked %s deployment(s) as destroyed.", count)
 
 
@@ -364,6 +606,9 @@ jobs = [
     StartDigitalTwinJobButtonReceiver,
     StopDigitalTwinJob,
     StopDigitalTwinJobButtonReceiver,
+    RedeployDigitalTwinJob,
+    CheckDigitalTwinHealthJob,
+    ValidateDigitalTwinConnectivityJob,
     AutoDestroyExpiredDigitalTwinJob,
 ]
 register_jobs(*jobs)

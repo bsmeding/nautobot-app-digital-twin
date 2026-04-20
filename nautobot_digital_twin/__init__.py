@@ -29,6 +29,8 @@ class NautobotDigitalTwinConfig(NautobotAppConfig):
         "CONTAINERLAB_SSH_PORT": 22,
         "CONTAINERLAB_SSH_USER": "clab",
         "CONTAINERLAB_SSH_PASSWORD": "clab",
+        # Optional: path to SSH private key file. When set (and file exists), used instead of password.
+        "CONTAINERLAB_SSH_KEY_PATH": "",
         # Optional: name of a Nautobot Secrets Group for SSH credentials (access type SSH, secret types Username/Password).
         # When set, overrides CONTAINERLAB_SSH_USER and CONTAINERLAB_SSH_PASSWORD.
         "CONTAINERLAB_SSH_CREDENTIALS_SECRETS_GROUP": "",
@@ -54,6 +56,8 @@ class NautobotDigitalTwinConfig(NautobotAppConfig):
         "REMOVE_CONFIG_LINES": [],
         # When True (default), remove site folder (topology + config files) from backend on destroy.
         "DELETE_CONFIG_AFTER_DESTROY": True,
+        # Maximum number of simultaneously active deployments per user (0 = unlimited).
+        "MAX_DEPLOYMENTS_PER_USER": 0,
     }
     docs_view_name = "plugins:nautobot_digital_twin:docs"
     searchable_models = ["digitaltwindeployment"]

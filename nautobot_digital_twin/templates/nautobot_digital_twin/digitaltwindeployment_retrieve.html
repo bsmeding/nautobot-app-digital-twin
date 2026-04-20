@@ -17,7 +17,17 @@
             </tr>
             <tr>
                 <td>Status</td>
-                <td>{{ object.status|render_boolean }} ({{ object.get_status_display }})</td>
+                <td>
+                    {% if object.status == "deployed" %}
+                        <span class="label label-success">{{ object.get_status_display }}</span>
+                    {% elif object.status == "deploying" or object.status == "destroying" %}
+                        <span class="label label-warning">{{ object.get_status_display }}</span>
+                    {% elif object.status == "failed" %}
+                        <span class="label label-danger">{{ object.get_status_display }}</span>
+                    {% else %}
+                        <span class="label label-default">{{ object.get_status_display }}</span>
+                    {% endif %}
+                </td>
             </tr>
             <tr>
                 <td>Backend</td>
@@ -48,13 +58,25 @@
 
     <div class="panel panel-default">
         <div class="panel-heading">
+            <strong>Actions</strong>
+        </div>
+        <div class="panel-body">
+            <a href="{% url 'plugins:nautobot_digital_twin:digitaltwindeployment_topology_export' pk=object.pk %}"
+               class="btn btn-default btn-sm"
+               title="Download the containerlab YAML topology (generated from current Nautobot data)">
+                <span class="mdi mdi-download"></span> Download Topology YAML
+            </a>
+        </div>
+    </div>
+
+    <div class="panel panel-default">
+        <div class="panel-heading">
             <strong>Topology Diagram</strong>
         </div>
         <div class="panel-body">
-            <!-- Mermaid graph rendered in-browser -->
             <script src="https://unpkg.com/mermaid@10.9.1/dist/mermaid.min.js"></script>
             <script>
-                mermaid.initialize({ startOnLoad: true });
+                mermaid.initialize({ startOnLoad: true, theme: "default" });
             </script>
             <pre class="mermaid">
 {{ object.mermaid_topology|safe }}
@@ -66,4 +88,3 @@
 {% block content_right_page %}
     {{ block.super }}
 {% endblock content_right_page %}
-

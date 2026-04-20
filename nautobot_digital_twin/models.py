@@ -17,8 +17,11 @@ class DigitalTwinDeployment(PrimaryModel):
     """
 
     class StatusChoices(models.TextChoices):
+        DEPLOYING = "deploying", "Deploying"
         DEPLOYED = "deployed", "Deployed"
+        DESTROYING = "destroying", "Destroying"
         DESTROYED = "destroyed", "Destroyed"
+        FAILED = "failed", "Failed"
 
     name = models.CharField(
         max_length=255,
@@ -54,7 +57,7 @@ class DigitalTwinDeployment(PrimaryModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["location"],
-                condition=models.Q(status="deployed"),
+                condition=models.Q(status__in=["deploying", "deployed", "destroying"]),
                 name="unique_active_deployment_per_location",
             ),
         ]

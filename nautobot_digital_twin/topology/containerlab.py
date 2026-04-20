@@ -19,26 +19,71 @@ _CLAB_IMAGE_TO_KIND = {
     "iol": "cisco_ios",
 }
 
-# Map Nautobot interface name to containerlab interface name (e.g. Ethernet1 -> eth1)
+
 def _nautobot_iface_to_clab(nautobot_name: str) -> str:
-    """Ethernet1 -> eth1, Ethernet2 -> eth2, etc."""
-    match = re.match(r"^Ethernet(\d+)$", nautobot_name, re.IGNORECASE)
-    if match:
-        return f"eth{match.group(1)}"
-    # Fallback: lowercase, strip spaces
-    return nautobot_name.lower().replace(" ", "").replace("-", "") or "eth1"
+    """
+    Map a Nautobot interface name to its containerlab equivalent.
+
+    Examples:
+      Ethernet1       -> eth1
+      Ethernet1/2     -> eth1-2
+      Management0     -> mgmt0
+      Loopback0       -> lo0
+      Port-channel1   -> po1
+      GigabitEthernet0/1 -> ge-0-1
+      FastEthernet0/1    -> fe-0-1
+    """
+    # Ethernet1 or Ethernet1/2/3
+    m = re.match(r"^Ethernet(\d+(?:[/]\d+)*)$", nautobot_name, re.IGNORECASE)
+    if m:
+        return "eth" + m.group(1).replace("/", "-")
+
+    # Management0, Management1
+    m = re.match(r"^Management(\d*)$", nautobot_name, re.IGNORECASE)
+    if m:
+        return f"mgmt{m.group(1)}"
+
+    # Loopback0
+    m = re.match(r"^Loopback(\d+)$", nautobot_name, re.IGNORECASE)
+    if m:
+        return f"lo{m.group(1)}"
+
+    # Port-channel1 or PortChannel1
+    m = re.match(r"^Port-?[Cc]hannel(\d+)$", nautobot_name, re.IGNORECASE)
+    if m:
+        return f"po{m.group(1)}"
+
+    # GigabitEthernet0/1
+    m = re.match(r"^GigabitEthernet(\d+(?:[/]\d+)*)$", nautobot_name, re.IGNORECASE)
+    if m:
+        return "ge-" + m.group(1).replace("/", "-")
+
+    # FastEthernet0/1
+    m = re.match(r"^FastEthernet(\d+(?:[/]\d+)*)$", nautobot_name, re.IGNORECASE)
+    if m:
+        return "fe-" + m.group(1).replace("/", "-")
+
+    # TenGigabitEthernet / TenGigE
+    m = re.match(r"^(?:TenGigabitEthernet|TenGigE)(\d+(?:[/]\d+)*)$", nautobot_name, re.IGNORECASE)
+    if m:
+        return "te-" + m.group(1).replace("/", "-")
+
+    # HundredGigE / HundredGigabitEthernet
+    m = re.match(r"^(?:HundredGigE|HundredGigabitEthernet)(\d+(?:[/]\d+)*)$", nautobot_name, re.IGNORECASE)
+    if m:
+        return "hu-" + m.group(1).replace("/", "-")
+
+    # Fallback: lowercase, strip non-alphanumeric except hyphen
+    sanitized = re.sub(r"[^a-z0-9-]", "", nautobot_name.lower())
+    return sanitized or "eth0"
 
 
 def _platform_to_clab_kind_image(device):
-    """Return (kind, image) for containerlab node from Nautobot device platform/software_version.
-    Uses CONTAINERLAB_PLATFORM_MAP if set: platform name (lowercase) -> image string.
-    e.g. {"arista_eos": "ceos", "cisco_ios": "ios"} or {"cisco_ios": "iol"}.
-    Kind is derived from platform name (spaces -> underscores). When empty, built-in (eos/ceos/veos -> ceos).
-    """
+    """Return (kind, image) for containerlab node from Nautobot device platform/software_version."""
     platform = getattr(device, "platform", None)
     sw_version = getattr(device, "software_version", None)
     platform_name = (platform.name if platform else "").lower()
-    platform_key = platform_name.replace(" ", "_")  # "Arista EOS" -> "arista_eos"
+    platform_key = platform_name.replace(" ", "_")
     cfg = get_plugin_config()
     platform_map = cfg.get("CONTAINERLAB_PLATFORM_MAP") or {}
     strict_version = bool(cfg.get("USE_STRICT_SOFTWARE_VERSION", True))
@@ -46,7 +91,6 @@ def _platform_to_clab_kind_image(device):
         entry = platform_map.get(platform_name) or platform_map.get(platform_key)
         if entry is not None:
             if isinstance(entry, str):
-                # Simple format: platform -> image (e.g. arista_eos: ceos, cisco_ios: ios)
                 kind = _CLAB_IMAGE_TO_KIND.get(entry, platform_key or "linux")
                 return kind, entry
             if isinstance(entry, dict):
@@ -54,60 +98,53 @@ def _platform_to_clab_kind_image(device):
                 image = entry.get("image")
                 if kind and image:
                     return kind, image
-    # Built-in: Arista EOS / cEOS / vEOS -> containerlab ceos
+    # Built-in: Arista EOS / cEOS / vEOS -> ceos
     if platform_name in ("eos", "ceos", "veos"):
         if strict_version:
             version_str = getattr(sw_version, "version", None)
             if not version_str:
-                # No explicit software_version on the device; fall back to a safe default
                 version_str = "4.34.2F"
             image = f"ceos:{version_str}"
         else:
-            # Non-strict: omit tag so container runtime uses default/latest ceos image
             image = "ceos"
         return "arista_ceos", image
-    # Default for unknown platform
+    # Default
     return "linux", "alpine:latest"
 
 
-def build_containerlab_yaml(location, device_startup_configs=None):
+def build_containerlab_yaml(location, device_startup_configs=None, device_filter=None):
     """
     Build a containerlab topology YAML string for the given Location.
 
-    Uses Devices at this location, their interfaces, and Cables between them to produce
-    a topology with nodes (kind/image from platform and software_version) and links.
-
-    device_startup_configs: optional dict mapping device name to relative config filename
-    (e.g. {"leaf1": "leaf1.cfg"}). When set, each node gets startup-config pointing to that
-    file (path relative to the topology file, so configs must be in the same directory).
+    device_startup_configs: optional dict mapping device name -> relative config filename.
+    device_filter: optional dict of queryset filter kwargs applied to Device.objects.filter()
+                   (e.g. {"role__name": "Leaf", "tags__name": "lab-ready"}) to deploy a subset.
     """
-    devices = list(Device.objects.filter(location=location).order_by("name"))
+    qs = Device.objects.filter(location=location)
+    if device_filter:
+        qs = qs.filter(**device_filter)
+    devices = list(qs.order_by("name"))
     if not devices:
-        logger.warning("No devices at location %s; generating empty topology", location.name)
+        logger.warning("No devices at location %s (filter: %s); generating empty topology", location.name, device_filter)
         return _empty_topology_yaml(location)
 
-    # Lab name: sanitize for containerlab (lowercase, no spaces)
     name = re.sub(r"[^a-z0-9-]", "-", location.name.lower()).strip("-") or "lab"
 
     nodes = {}
     for dev in devices:
         kind, image = _platform_to_clab_kind_image(dev)
-        node_name = dev.name  # containerlab will use this as hostname
         node_cfg = {"kind": kind, "image": image}
-        # Linux/alpine containers exit immediately without a foreground process; keep them running
         if kind == "linux":
             node_cfg["cmd"] = "sleep infinity"
         if device_startup_configs and dev.name in device_startup_configs:
-            # Path relative to topology file (same directory on containerlab server).
-            # enforce-startup-config ensures our file is used even if lab dir has old config.
             node_cfg["startup-config"] = device_startup_configs[dev.name]
             node_cfg["enforce-startup-config"] = True
-        nodes[node_name] = node_cfg
+        nodes[dev.name] = node_cfg
 
-    # Build links from Cable: only cables between interfaces at this location (avoids loading all cables)
+    device_ids = {dev.id for dev in devices}
     interface_ct = ContentType.objects.get_for_model(Interface)
     interface_ids = list(
-        Interface.objects.filter(device__location=location).values_list("pk", flat=True)
+        Interface.objects.filter(device__id__in=device_ids).values_list("pk", flat=True)
     )
     links = []
     seen = set()
@@ -124,6 +161,9 @@ def build_containerlab_yaml(location, device_startup_configs=None):
                 continue
             dev_a, if_a = a.device, a.name
             dev_b, if_b = b.device, b.name
+            # Only include cables between devices that are in our filtered set
+            if dev_a.id not in device_ids or dev_b.id not in device_ids:
+                continue
             endpoint_a = f"{dev_a.name}:{_nautobot_iface_to_clab(if_a)}"
             endpoint_b = f"{dev_b.name}:{_nautobot_iface_to_clab(if_b)}"
             key = tuple(sorted([endpoint_a, endpoint_b]))
@@ -135,15 +175,16 @@ def build_containerlab_yaml(location, device_startup_configs=None):
     return _render_yaml(name, nodes, links)
 
 
-def get_required_images_for_location(location):
+def get_required_images_for_location(location, device_filter=None):
     """
-    Return the set of container image names (e.g. {"ceos:4.34.2F", "alpine:latest"})
-    needed to deploy the topology for this location. Uses the same platform mapping as
-    build_containerlab_yaml, so this can be used to verify images exist before deploy.
+    Return the set of container image names needed to deploy the topology for this location.
+    Accepts the same device_filter as build_containerlab_yaml.
     """
-    devices = list(Device.objects.filter(location=location))
+    qs = Device.objects.filter(location=location)
+    if device_filter:
+        qs = qs.filter(**device_filter)
     images = set()
-    for dev in devices:
+    for dev in qs:
         _, image = _platform_to_clab_kind_image(dev)
         images.add(image)
     return images
@@ -151,31 +192,27 @@ def get_required_images_for_location(location):
 
 def build_mermaid_topology(location):
     """
-    Build a simple Mermaid graph description for the given Location.
-
-    This mirrors the topology we generate for containerlab, but only connects
-    devices by name (without per-interface detail) so it can be rendered easily
-    in Nautobot or any Mermaid viewer.
+    Build a Mermaid graph description for the given Location.
+    Edges include interface labels (e.g. Ethernet1:Ethernet1) so the diagram is informative.
 
     Example output:
 
         graph LR
-          spine1 --- leaf1
-          leaf1 --- host1
+          spine1 ---|"Ethernet1 -- Ethernet1"| leaf1
+          leaf1 ---|"Ethernet2 -- Ethernet1"| host1
     """
     devices = list(Device.objects.filter(location=location).order_by("name"))
     if not devices:
         return "graph LR\n  %% No devices at this location\n"
 
-    # Map device IDs to names for quick lookup
     device_names = {dev.id: dev.name for dev in devices}
 
-    # Build links from cables between interfaces at this location
     interface_ct = ContentType.objects.get_for_model(Interface)
     interface_ids = list(
         Interface.objects.filter(device__location=location).values_list("pk", flat=True)
     )
-    edges = set()
+    # edges: (name_a, name_b, iface_a, iface_b) — deduplicated by sorted device pair
+    edges = {}
     if interface_ids:
         for cable in Cable.objects.filter(
             termination_a_type=interface_ct,
@@ -187,23 +224,27 @@ def build_mermaid_topology(location):
             b = getattr(cable, "termination_b", None)
             if a is None or b is None or not isinstance(a, Interface) or not isinstance(b, Interface):
                 continue
-            dev_a = a.device
-            dev_b = b.device
-            name_a = device_names.get(dev_a.id)
-            name_b = device_names.get(dev_b.id)
+            name_a = device_names.get(a.device.id)
+            name_b = device_names.get(b.device.id)
             if not name_a or not name_b or name_a == name_b:
                 continue
-            edge = tuple(sorted((name_a, name_b)))
-            edges.add(edge)
+            key = tuple(sorted((name_a, name_b)))
+            if key not in edges:
+                # Store in sorted order so label reads left-device:iface -- right-device:iface
+                if name_a <= name_b:
+                    edges[key] = (name_a, name_b, a.name, b.name)
+                else:
+                    edges[key] = (name_b, name_a, b.name, a.name)
 
     lines = ["graph LR"]
     if not edges:
-        # No cables, just list devices
-        for name in device_names.values():
+        for name in sorted(device_names.values()):
             lines.append(f"  {name}")
     else:
-        for a, b in sorted(edges):
-            lines.append(f"  {a} --- {b}")
+        for key in sorted(edges):
+            dev_a, dev_b, if_a, if_b = edges[key]
+            label = f"{if_a} -- {if_b}"
+            lines.append(f'  {dev_a} ---| "{label}" |{dev_b}')
     return "\n".join(lines)
 
 
