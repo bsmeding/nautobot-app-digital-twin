@@ -62,3 +62,29 @@ def get_credentials_from_secrets_group(secrets_group_name, access_type, obj=None
     except Exception as e:
         logger.warning("Failed to get credentials from Secrets Group '%s': %s", secrets_group_name, e)
         return None
+
+
+def get_fallback_auth_credentials():
+    """
+    Get username/password for PLATFORM_ADD_CONFIG_LINES (when using {username}/{password} placeholders).
+
+    Uses DIGITAL_TWIN_FALLBACK_AUTH_SECRETS_GROUP (access type Generic) if set,
+    else returns ("admin", "admin") for lab/demo use.
+
+    Returns:
+        Tuple (username, password). Never None.
+    """
+    from nautobot_digital_twin.plugin_config import get_plugin_config
+
+    cfg = get_plugin_config()
+    secrets_group = (cfg.get("DIGITAL_TWIN_FALLBACK_AUTH_SECRETS_GROUP") or "").strip()
+    if secrets_group:
+        creds = get_credentials_from_secrets_group(secrets_group, "generic")
+        if creds:
+            return creds
+    # Backward compat: DIGITAL_TWIN_DEFAULT_USERNAME/PASSWORD (removed, use Secrets Group)
+    username = cfg.get("DIGITAL_TWIN_DEFAULT_USERNAME")
+    password = cfg.get("DIGITAL_TWIN_DEFAULT_PASSWORD")
+    if username is not None and password is not None:
+        return (str(username), str(password))
+    return ("admin", "admin")

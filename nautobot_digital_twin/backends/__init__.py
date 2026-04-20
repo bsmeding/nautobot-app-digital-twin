@@ -4,10 +4,18 @@ from nautobot_digital_twin.utils import get_plugin_config
 from .base import DigitalTwinBackend
 from .containerlab import ContainerlabBackend
 
+try:
+    from .eveng import EveNGBackend
+    _EVENG_AVAILABLE = True
+except ImportError:
+    EveNGBackend = None
+    _EVENG_AVAILABLE = False
 
 _BACKENDS = {
     "containerlab": ContainerlabBackend,
 }
+if _EVENG_AVAILABLE:
+    _BACKENDS["eveng"] = EveNGBackend
 
 
 def get_available_backend_names():

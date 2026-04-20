@@ -23,24 +23,40 @@ def create_default_job_buttons(apps=global_apps):
     skipped_no_job = 0
 
     # Look up the Job records by class name, like Golden Config does.
+    # Add Start button
     try:
         start_job = Job.objects.get(job_class_name="StartDigitalTwinJobButtonReceiver")
     except Job.DoesNotExist:
         start_job = None
         skipped_no_job += 1
 
+    # Add Stop button
     try:
         stop_job = Job.objects.get(job_class_name="StopDigitalTwinJobButtonReceiver")
     except Job.DoesNotExist:
         stop_job = None
         skipped_no_job += 1
 
-    if not start_job and not stop_job:
+    # Add Push Intended Config button
+    try:
+        push_job = Job.objects.get(job_class_name="PushIntendedConfigJobButtonReceiver")
+    except Job.DoesNotExist:
+        push_job = None
+        skipped_no_job += 1
+
+    # Add Execute and Send Intended Config button
+    try:
+        execute_send_job = Job.objects.get(job_class_name="ExecuteAndSendIntendedConfigJobButtonReceiver")
+    except Job.DoesNotExist:
+        execute_send_job = None
+        skipped_no_job += 1
+
+    if not start_job and not stop_job and not push_job and not execute_send_job:
         return created_count, skipped_no_job
 
     location_ct = ContentType.objects.get_for_model(Location)
 
-    # Start Digital Twin button
+    # Create Start Digital Twin button if it doesn't exist
     if start_job:
         jb_start, created = JobButton.objects.get_or_create(
             name="Start Digital Twin",
@@ -61,7 +77,7 @@ def create_default_job_buttons(apps=global_apps):
                 jb_start.save(update_fields=["enabled"])
             created_count += 1
 
-    # Stop Digital Twin button
+    # Create Stop Digital Twin button if it doesn't exist
     if stop_job:
         jb_stop, created = JobButton.objects.get_or_create(
             name="Stop Digital Twin",
@@ -81,7 +97,50 @@ def create_default_job_buttons(apps=global_apps):
                 jb_stop.save(update_fields=["enabled"])
             created_count += 1
 
+    # Create Push Intended Config button if it doesn't exist
+    if push_job:
+        jb_push, created = JobButton.objects.get_or_create(
+            name="Push Intended Config",
+            defaults={
+                "text": "Push Intended Config",
+                "job": push_job,
+                "weight": 102,
+                "group_name": "Nautobot Digital Twin",
+                "button_class": "info",
+                "confirmation": True,
+            },
+        )
+        if created:
+            jb_push.content_types.set([location_ct])
+            if hasattr(jb_push, "enabled"):
+                jb_push.enabled = True
+                jb_push.save(update_fields=["enabled"])
+            created_count += 1
+
+    # Create Execute and Send Intended Config button if it doesn't exist
+    if execute_send_job:
+        jb_execute_send, created = JobButton.objects.get_or_create(
+            name="Execute and Send Intended Config",
+            defaults={
+                "text": "Execute and Send Intended Config",
+                "job": execute_send_job,
+                "weight": 103,
+                "group_name": "Nautobot Digital Twin",
+                "button_class": "success",
+                "confirmation": True,
+            },
+        )
+        if created:
+            jb_execute_send.content_types.set([location_ct])
+            if hasattr(jb_execute_send, "enabled"):
+                jb_execute_send.enabled = True
+                jb_execute_send.save(update_fields=["enabled"])
+            created_count += 1
+
     return created_count, skipped_no_job
+
+# ToDo: Add traffice generator button
+
 
 
 def post_migrate_create_job_buttons(sender, apps=global_apps, **kwargs):  # pylint: disable=unused-argument

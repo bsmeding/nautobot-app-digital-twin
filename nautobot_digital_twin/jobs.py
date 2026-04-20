@@ -177,7 +177,10 @@ def _run_digital_twin_destroy(job, location, backend_name=None, mark_destroyed_e
         exit_status, out, err = result
         if exit_status != 0:
             job.logger.warning("Destroy command returned exit status %s: %s", exit_status, err or out)
-            if not mark_destroyed_even_on_failure:
+            # If topology/lab is already gone (no such file, etc.), mark destroyed so user can start fresh
+            err_lower = (err or out or "").lower()
+            lab_already_gone = "no such file" in err_lower or "no such directory" in err_lower
+            if not mark_destroyed_even_on_failure and not lab_already_gone:
                 return
 
     now = datetime.now(timezone.utc)
@@ -308,6 +311,252 @@ class StopDigitalTwinJobButtonReceiver(JobButtonReceiver):
         _run_digital_twin_destroy(self, location)
 
 
+def _run_execute_and_send_intended_config(job, location, backend_name=None):
+    """
+    Execute Golden Config intended generation, then push configs to the digital twin and reactivate.
+
+    Steps:
+    1. Run Golden Config "Generate Intended Configurations" job (enqueue and wait for completion)
+    2. Push intended configs to the backend (upload, copy into containers)
+    3. Reactivate config on each device (platform-specific reload command)
+    """
+    import time
+
+    from nautobot_digital_twin.backends import get_backend
+    from nautobot_digital_twin.plugin_config import get_plugin_config
+
+    if "intended_config" not in (c[0] for c in CONFIG_SOURCE_CHOICES):
+        job.logger.failure("Golden Config plugin is not installed; cannot execute and send intended config.")
+        return
+
+    if backend_name is None:
+        cfg = get_plugin_config()
+        backend_name = cfg.get("BACKEND", "containerlab")
+
+    # 1. Run Golden Config IntendedJob
+    job.logger.info("Step 1: Running Golden Config 'Generate Intended Configurations' job...")
+    try:
+        from nautobot.extras.models import JobResult
+
+        # JobModel in 2.2+, Job in older versions
+        JobOrModel = None
+        try:
+            from nautobot.extras.models import JobModel
+            JobOrModel = JobModel
+        except ImportError:
+            from nautobot.extras.models import Job
+            JobOrModel = Job
+
+        intended_job = JobOrModel.objects.filter(job_class_name="IntendedJob").first()
+        if not intended_job:
+            intended_job = JobOrModel.objects.filter(
+                job_class_name__icontains="Intended",
+            ).first()
+        if not intended_job and hasattr(JobOrModel, "get_for_class_path"):
+            intended_job = JobOrModel.get_for_class_path("nautobot_golden_config.jobs.IntendedJob")
+        if not intended_job:
+            job.logger.failure(
+                "Golden Config 'Generate Intended Configurations' job not found. "
+                "Ensure Golden Config is installed and the job is enabled."
+            )
+            return
+
+        user = _get_job_user(job)
+        child_result = JobResult.enqueue_job(
+            job_model=intended_job,
+            user=user,
+            job_kwargs={},
+        )
+        job.logger.info("Intended job enqueued (JobResult %s). Waiting for completion...", child_result.pk)
+
+        # Poll until complete (max ~15 min)
+        poll_interval = 5
+        max_wait = 900  # 15 min
+        elapsed = 0
+        while elapsed < max_wait:
+            child_result.refresh_from_db()
+            status = getattr(child_result, "status", None)
+            if status is not None and hasattr(status, "name"):
+                status = status.name
+            status_str = str(status or "").upper()
+            if status_str in ("COMPLETED", "SUCCESS"):
+                job.logger.info("Golden Config intended generation completed successfully.")
+                break
+            if status_str in ("FAILED", "ERROR", "FAILURE"):
+                job.logger.failure("Golden Config intended generation failed. Check the job result for details.")
+                return
+            time.sleep(poll_interval)
+            elapsed += poll_interval
+            job.logger.info("Waiting for intended config generation... (%ss)", elapsed)
+        else:
+            job.logger.failure("Golden Config intended generation timed out after %s seconds.", max_wait)
+            return
+
+    except ImportError as e:
+        job.logger.failure("Could not run Golden Config job: %s", e)
+        return
+    except Exception as e:
+        job.logger.failure("Golden Config intended generation failed: %s", e)
+        raise
+
+    # 2 & 3. Push intended configs to backend and reactivate
+    job.logger.info("Step 2: Pushing intended configs to digital twin and reactivating...")
+    backend = get_backend(backend_name)
+    if not hasattr(backend, "push_intended_config"):
+        job.logger.failure("Backend '%s' does not support push intended config.", backend_name)
+        return
+
+    try:
+        exit_status, out, err = backend.push_intended_config(location, job=job)
+    except Exception as e:
+        job.logger.failure("Push failed: %s", e)
+        raise
+
+    if exit_status != 0:
+        job.logger.failure("Push intended config failed: %s", err or out)
+        return
+
+    job.logger.success(
+        "Execute and Send Intended Config completed for %s: generated configs, pushed to backend, and reactivated.",
+        location.name,
+    )
+
+
+def _run_push_intended_config(job, location, backend_name=None):
+    """Push intended config to an already running digital twin."""
+    from nautobot_digital_twin.backends import get_backend
+    from nautobot_digital_twin.plugin_config import get_plugin_config
+
+    if "intended_config" not in (c[0] for c in CONFIG_SOURCE_CHOICES):
+        job.logger.failure("Golden Config plugin is not installed; cannot push intended config.")
+        return
+
+    if backend_name is None:
+        cfg = get_plugin_config()
+        backend_name = cfg.get("BACKEND", "containerlab")
+
+    backend = get_backend(backend_name)
+    if not hasattr(backend, "push_intended_config"):
+        job.logger.failure("Backend '%s' does not support push intended config.", backend_name)
+        return
+
+    job.logger.info("Pushing intended config to digital twin for '%s'", location.name)
+    try:
+        exit_status, out, err = backend.push_intended_config(location, job=job)
+    except Exception as e:
+        job.logger.failure("Push failed: %s", e)
+        raise
+
+    if exit_status != 0:
+        job.logger.failure("Push intended config failed: %s", err or out)
+        return
+    job.logger.success("Intended config pushed to digital twin for %s", location.name)
+
+
+class PushIntendedConfigJob(Job):
+    """Push intended config to an already running digital twin (manual run)."""
+
+    class Meta:
+        name = "Push Intended Config to Digital Twin (manual)"
+        description = "Push updated intended config from Golden Config to a running digital twin."
+        commit_default = True
+        soft_time_limit = 300
+        time_limit = 360
+
+    backend = ChoiceVar(
+        choices=BACKEND_CHOICES,
+        default=DEFAULT_BACKEND,
+        description="Backend used for the deployment.",
+    )
+    location = ObjectVar(
+        model=Location,
+        description="Location with running digital twin to push config to",
+    )
+
+    def run(self, location, backend, **kwargs):
+        _run_push_intended_config(self, location, backend_name=backend)
+
+
+class PushIntendedConfigJobButtonReceiver(JobButtonReceiver):
+    """Push intended config to the current Location's digital twin. Use as Job Button on Location detail."""
+
+    class Meta:
+        name = "Push Intended Config to Digital Twin (Job Button)"
+        description = "Push intended config to this Location's running digital twin."
+        commit_default = True
+        soft_time_limit = 300
+        time_limit = 360
+
+    def run(self, object_pk, object_model_name, **kwargs):
+        from django.contrib.contenttypes.models import ContentType
+
+        ct = ContentType.objects.get_by_natural_key(
+            *object_model_name.split(".", 1)
+            if "." in object_model_name
+            else ("dcim", object_model_name)
+        )
+        location = ct.get_object_for_this_type(pk=object_pk)
+        if not isinstance(location, Location):
+            self.logger.error("Job Button expects a Location, got %s", type(location).__name__)
+            raise ValueError(f"Expected Location, got {type(location).__name__}")
+        _run_push_intended_config(self, location)
+
+
+class ExecuteAndSendIntendedConfigJob(Job):
+    """Execute Golden Config intended generation, then push and reactivate on digital twin (manual run)."""
+
+    class Meta:
+        name = "Execute and Send Intended Config (manual)"
+        description = (
+            "Run Golden Config 'Generate Intended Configurations', then push configs to the digital twin "
+            "and reactivate on each device."
+        )
+        commit_default = True
+        soft_time_limit = 600  # 15 min for GC + push
+        time_limit = 660
+
+    backend = ChoiceVar(
+        choices=BACKEND_CHOICES,
+        default=DEFAULT_BACKEND,
+        description="Backend used for the deployment.",
+    )
+    location = ObjectVar(
+        model=Location,
+        description="Location with running digital twin",
+    )
+
+    def run(self, location, backend, **kwargs):
+        _run_execute_and_send_intended_config(self, location, backend_name=backend)
+
+
+class ExecuteAndSendIntendedConfigJobButtonReceiver(JobButtonReceiver):
+    """Execute Golden Config intended, push to digital twin, and reactivate. Use as Job Button on Location detail."""
+
+    class Meta:
+        name = "Execute and Send Intended Config (Job Button)"
+        description = (
+            "Run Golden Config to generate intended configs, push them to this Location's digital twin, "
+            "and reactivate the new config on each device."
+        )
+        commit_default = True
+        soft_time_limit = 600
+        time_limit = 660
+
+    def run(self, object_pk, object_model_name, **kwargs):
+        from django.contrib.contenttypes.models import ContentType
+
+        ct = ContentType.objects.get_by_natural_key(
+            *object_model_name.split(".", 1)
+            if "." in object_model_name
+            else ("dcim", object_model_name)
+        )
+        location = ct.get_object_for_this_type(pk=object_pk)
+        if not isinstance(location, Location):
+            self.logger.error("Job Button expects a Location, got %s", type(location).__name__)
+            raise ValueError(f"Expected Location, got {type(location).__name__}")
+        _run_execute_and_send_intended_config(self, location)
+
+
 class AutoDestroyExpiredDigitalTwinJob(Job):
     """Destroy all digital twin deployments that have passed their auto_destroy_at time.
 
@@ -364,6 +613,10 @@ jobs = [
     StartDigitalTwinJobButtonReceiver,
     StopDigitalTwinJob,
     StopDigitalTwinJobButtonReceiver,
+    PushIntendedConfigJob,
+    PushIntendedConfigJobButtonReceiver,
+    ExecuteAndSendIntendedConfigJob,
+    ExecuteAndSendIntendedConfigJobButtonReceiver,
     AutoDestroyExpiredDigitalTwinJob,
 ]
 register_jobs(*jobs)

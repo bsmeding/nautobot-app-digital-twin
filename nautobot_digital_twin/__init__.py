@@ -34,12 +34,23 @@ class NautobotDigitalTwinConfig(NautobotAppConfig):
         "CONTAINERLAB_SSH_CREDENTIALS_SECRETS_GROUP": "",
         # Optional: name of a Nautobot Secrets Group for digital twin fallback auth (access type Generic, Username/Password).
         # Used when appending platform-specific fallback auth to intended configs.
+        # Optional: Secrets Group (access type Generic, Username/Password) for {username}/{password} in PLATFORM_ADD_CONFIG_LINES.
         "DIGITAL_TWIN_FALLBACK_AUTH_SECRETS_GROUP": "",
+        # Replace patterns in intended config (e.g. for enterprises: switch radius/tacacs to local).
+        # List of (old_string, new_string) tuples. E.g. [("group radius", "local"), ("group tacacs+", "local")].
+        "REPLACE_CONFIG_PATTERNS": [],
+        # Platform-specific config lines to add (e.g. fallback auth). Dict: platform_key -> list of lines.
+        # Use {username} and {password} placeholders. E.g. {"arista_eos": ["username {username} privilege 15 role network-admin secret {password}"]}.
+        "PLATFORM_ADD_CONFIG_LINES": {},
+        # Platform-specific remove patterns. Dict: platform_key -> list of patterns (same format as REMOVE_CONFIG_LINES).
+        # Applied in addition to global REMOVE_CONFIG_LINES. E.g. {"cisco_ios": ["radius-server"], "arista_eos": []}.
+        "PLATFORM_REMOVE_CONFIG_LINES": {},
         # Path on Nautobot (container/host) where topology YAML files are created/stored
         "DIGITAL_TWIN_ROOT": "/opt/nautobot/digital_twin",
         # Subfolder under the containerlab SSH user's home where topology files live (e.g. "nautobot" -> ~/nautobot)
         "CONTAINERLAB_REMOTE_TOPOLOGY_DIR": "nautobot",
         "CONTAINERLAB_SSH_CONNECT_TIMEOUT": 15,
+        # Increase for large topologies (each Arista cEOS ~2-3 min boot). 6 nodes ~15 min.
         "CONTAINERLAB_COMMAND_TIMEOUT_MINUTES": 5,
         "DIGITAL_TWIN_JOB_TIMEOUT_MINUTES": 10,
         # Auto-destroy deployments after this many minutes (0 = disable). Default 24h.
@@ -48,12 +59,39 @@ class NautobotDigitalTwinConfig(NautobotAppConfig):
         # Simple format: platform -> image (e.g. {"arista_eos": "ceos", "cisco_ios": "ios"}).
         # When empty, built-in mapping is used (eos/ceos/veos -> ceos).
         "CONTAINERLAB_PLATFORM_MAP": {},
+        # EVE-NG backend settings (when BACKEND=eveng)
+        "EVENG_HOST": "localhost",
+        "EVENG_PROTOCOL": "https",
+        "EVENG_PORT": None,
+        "EVENG_USER": "admin",
+        "EVENG_PASSWORD": "eve",
+        "EVENG_SSL_VERIFY": False,
+        "EVENG_CREDENTIALS_SECRETS_GROUP": "",
+        "EVENG_LAB_FOLDER": "nautobot",
+        # Map Nautobot platform (lowercase) to EVE-NG template or {"template": str, "image": str}.
+        # E.g. {"arista_eos": "veos"} or {"arista_eos": {"template": "veos", "image": "veos-4.34.2F"}}.
+        "EVENG_PLATFORM_MAP": {},
+        # When True, use Nautobot primary_ip4 for containerlab mgmt network (extract subnet, set mgmt-ipv4 per node).
+        "USE_PRIMARY_IP_FOR_MGMT": True,
         # Remove config blocks from intended config before digital twin deploy.
         # When a line contains a pattern, that line and all indented children are removed.
         # E.g. ["GigabitEthernet0/0", "radius-server"] removes management interface and RADIUS blocks.
         "REMOVE_CONFIG_LINES": [],
         # When True (default), remove site folder (topology + config files) from backend on destroy.
         "DELETE_CONFIG_AFTER_DESTROY": True,
+        # Platform-specific config for "Push intended config" job: where to copy config inside container
+        # and optional reload command. Dict: platform_key -> {"container_path": str, "reload_command": str}.
+        # Users can override or extend via PLATFORM_PUSH_CONFIG in nautobot_config.py.
+        "PLATFORM_PUSH_CONFIG": {
+            "arista_eos": {
+                "container_path": "/mnt/flash/startup-config",
+                "reload_command": "FastCli -p 15 -c 'configure replace flash:startup-config force'",
+            },
+            "cisco_ios": {
+                "container_path": "/config/startup-config.cfg",
+                "reload_command": "",  # Copy only; config used on next boot
+            },
+        },
     }
     docs_view_name = "plugins:nautobot_digital_twin:docs"
     searchable_models = ["digitaltwindeployment"]

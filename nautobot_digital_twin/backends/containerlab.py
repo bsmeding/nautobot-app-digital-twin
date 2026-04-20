@@ -15,6 +15,13 @@ from .base import DigitalTwinBackend
 logger = logging.getLogger(__name__)
 
 
+def _device_platform_key(device):
+    """Return platform key for config lookups (e.g. 'arista_eos')."""
+    platform = getattr(device, "platform", None)
+    name = (platform.name if platform else "").lower()
+    return name.replace(" ", "_")
+
+
 def _get_ssh_access_type():
     """Return the SSH access type constant (handles Nautobot version differences)."""
     try:
@@ -177,6 +184,7 @@ class ContainerlabBackend(DigitalTwinBackend):
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         try:
+            
             if key_path and os.path.exists(key_path):
                 client.connect(hostname=host, port=port, username=user, key_filename=key_path, timeout=connect_timeout)
             else:
@@ -201,24 +209,54 @@ class ContainerlabBackend(DigitalTwinBackend):
         Get intended configs from Golden Config, upload them to the containerlab server
         in the site directory, and return device_startup_configs dict for the topology builder.
         Config files are placed next to the topology file so startup-config can use relative paths.
-        REMOVE_CONFIG_LINES patterns are applied before upload (e.g. remove RADIUS, management iface).
+        REMOVE_CONFIG_LINES, PLATFORM_REMOVE_CONFIG_LINES, REPLACE_CONFIG_PATTERNS, and PLATFORM_ADD_CONFIG_LINES are applied.
         """
         from nautobot_digital_twin.golden_config_intended import get_device_intended_config
-        from nautobot_digital_twin.config_filter import filter_config_remove_blocks
+        from nautobot_digital_twin.config_filter import (
+            filter_config_remove_blocks,
+            filter_config_replace,
+            filter_config_append_add_lines,
+            build_minimal_config_from_add_lines,
+        )
+        from nautobot_digital_twin.secrets_utils import get_fallback_auth_credentials
 
         cfg = get_plugin_config()
         remove_patterns = cfg.get("REMOVE_CONFIG_LINES") or []
+        platform_remove_config_lines = cfg.get("PLATFORM_REMOVE_CONFIG_LINES") or {}
+        replace_patterns = cfg.get("REPLACE_CONFIG_PATTERNS") or []
+        platform_add_config_lines = cfg.get("PLATFORM_ADD_CONFIG_LINES") or cfg.get("PLATFORM_FALLBACK_AUTH") or {}
+        username, password = get_fallback_auth_credentials()
 
         devices = list(Device.objects.filter(location=site).order_by("name"))
         device_startup_configs = {}
         for device in devices:
             config_content = get_device_intended_config(device)
+            platform_key = _device_platform_key(device)
+            has_platform_add = platform_key in platform_add_config_lines
+
+            created_minimal_config = False
             if not config_content:
-                log("No intended config for %s; node will boot without startup-config.", device.name)
-                continue
-            if remove_patterns:
-                config_content = filter_config_remove_blocks(config_content, remove_patterns)
-                log("Filtered intended config for %s (REMOVE_CONFIG_LINES: %s)", device.name, remove_patterns)
+                if has_platform_add:
+                    config_content = build_minimal_config_from_add_lines(
+                        platform_key, username, password, platform_add_config_lines
+                    )
+                    created_minimal_config = True
+                    log("No intended config for %s; created minimal config (platform %s).", device.name, platform_key)
+                else:
+                    log("No intended config for %s; node will boot without startup-config.", device.name)
+                    continue
+            all_remove_patterns = list(remove_patterns) + list(platform_remove_config_lines.get(platform_key) or [])
+            if all_remove_patterns:
+                config_content = filter_config_remove_blocks(config_content, all_remove_patterns)
+                log("Filtered intended config for %s (REMOVE_CONFIG_LINES + PLATFORM_REMOVE: %s)", device.name, all_remove_patterns)
+            if replace_patterns:
+                config_content = filter_config_replace(config_content, replace_patterns)
+                log("Applied REPLACE_CONFIG_PATTERNS for %s", device.name)
+            if has_platform_add and not created_minimal_config:
+                config_content = filter_config_append_add_lines(
+                    config_content, platform_key, username, password, platform_add_config_lines
+                )
+                log("Added PLATFORM_ADD_CONFIG_LINES for %s (platform %s)", device.name, platform_key)
             filename = f"{device.name}.cfg"
             try:
                 self._write_remote_site_file(site, filename, config_content)
@@ -330,6 +368,82 @@ class ContainerlabBackend(DigitalTwinBackend):
         cmd = f"cd {topo_dir} && containerlab deploy -t {topo_file} --reconfigure"
         log("Running containerlab deploy (command timeout from config)...")
         return self._run_remote(cmd)
+
+    def push_intended_config(self, site, job=None):
+        """
+        Push updated intended configs to an already running digital twin.
+
+        Fetches intended configs from Golden Config, applies filters (REMOVE, REPLACE, ADD),
+        uploads to the containerlab host, then for each device: docker cp into container
+        and optionally runs a platform-specific reload command (from PLATFORM_PUSH_CONFIG).
+        """
+        def log(msg, *args):
+            if job:
+                job.logger.info(msg, *args)
+            logger.info(msg, *args)
+
+        # 1. Check deployment exists
+        from nautobot_digital_twin.models import DigitalTwinDeployment
+
+        if not DigitalTwinDeployment.objects.filter(
+            location=site, status=DigitalTwinDeployment.StatusChoices.DEPLOYED
+        ).exists():
+            log("No active deployment for '%s'; cannot push config.", site.name)
+            return 1, "", "No active digital twin deployment"
+
+        # 2. Upload intended configs (same logic as deploy)
+        log("Uploading intended configs...")
+        self._ensure_remote_topology_dir(site)
+        device_startup_configs = self._upload_intended_configs_for_topology(site, job, log)
+        if not device_startup_configs:
+            log("No intended configs to push.")
+            return 0, "", ""
+
+        # 3. Lab name (must match topology)
+        lab_name = re.sub(r"[^a-z0-9-]", "-", site.name.lower()).strip("-") or "lab"
+        subdir = self._remote_topology_subdir()
+        topo_dir = f"~/{subdir}/{site.name}"
+
+        cfg = get_plugin_config()
+        platform_push_config = cfg.get("PLATFORM_PUSH_CONFIG") or {}
+        devices = list(Device.objects.filter(location=site, name__in=device_startup_configs).order_by("name"))
+
+        for device in devices:
+            platform_key = _device_platform_key(device)
+            push_cfg = platform_push_config.get(platform_key) if isinstance(platform_push_config, dict) else None
+            if not push_cfg or not isinstance(push_cfg, dict):
+                log("No PLATFORM_PUSH_CONFIG for %s (platform %s); skipping.", device.name, platform_key)
+                continue
+
+            container_path = push_cfg.get("container_path", "").strip()
+            reload_cmd = (push_cfg.get("reload_command") or "").strip()
+            if not container_path:
+                log("No container_path for %s; skipping.", device.name)
+                continue
+
+            container_name = f"clab-{lab_name}-{device.name}"
+            filename = device_startup_configs[device.name]
+
+            # docker cp from host (in topo_dir) to container
+            copy_cmd = f"cd {topo_dir} && docker cp {filename} {container_name}:{container_path}"
+            log("Copying config for %s: %s", device.name, copy_cmd)
+            exit_status, out, err = self._run_remote(copy_cmd)
+            if exit_status != 0:
+                log("Failed to copy config for %s: %s", device.name, err or out)
+                return exit_status, out, err
+
+            if reload_cmd:
+                exec_cmd = f"docker exec {container_name} {reload_cmd}"
+                log("Running reload for %s: %s", device.name, exec_cmd)
+                exit_status, out, err = self._run_remote(exec_cmd)
+                if exit_status != 0:
+                    log("Reload command failed for %s (exit %s): %s", device.name, exit_status, err or out)
+                    # Non-fatal: config was copied, may apply on next boot
+                else:
+                    log("Reload completed for %s", device.name)
+
+        log("Push intended config completed for %s", site.name)
+        return 0, "", ""
 
     def destroy_site(self, site):
         path = self._remote_topology_path(site)

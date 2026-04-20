@@ -140,6 +140,7 @@ dmypy.json
 
 # Editor
 .vscode/
+.cla
 
 ### macOS ###
 # General

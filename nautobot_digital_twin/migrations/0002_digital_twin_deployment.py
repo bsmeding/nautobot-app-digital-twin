@@ -8,12 +8,12 @@ import uuid
 
 
 class Migration(migrations.Migration):
-
+    # Import initial
     dependencies = [
         ("nautobot_digital_twin", "0001_initial"),
         # dcim.Location and users.User are provided by Nautobot core (migrated before plugins).
     ]
-
+    # Create adatabase fields/columns
     operations = [
         migrations.CreateModel(
             name="DigitalTwinDeployment",

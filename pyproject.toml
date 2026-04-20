@@ -32,6 +32,8 @@ python = ">=3.10,<3.14"
 nautobot = ">=3.0.0,<4.0.0"
 # Topology generation (containerlab YAML)
 pyyaml = "*"
+# EVE-NG backend (only needed when BACKEND=eveng)
+eve-ng = "*"
 
 [tool.poetry.group.dev.dependencies]
 coverage = "*"

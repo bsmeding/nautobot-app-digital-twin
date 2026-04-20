@@ -10,7 +10,13 @@ def get_plugin_config():
     app_config = apps.get_app_config("nautobot_digital_twin")
     defaults = getattr(app_config, "default_settings", {}) or {}
     user = settings.PLUGINS_CONFIG.get("nautobot_digital_twin", {}) or {}
-    return {**defaults, **user}
+    result = {**defaults, **user}
+    # Merge PLATFORM_PUSH_CONFIG so users can override individual platforms while keeping defaults
+    default_push = defaults.get("PLATFORM_PUSH_CONFIG") or {}
+    user_push = user.get("PLATFORM_PUSH_CONFIG") or {}
+    if isinstance(default_push, dict) and isinstance(user_push, dict):
+        result["PLATFORM_PUSH_CONFIG"] = {**default_push, **user_push}
+    return result
 
 
 def show_digital_twin_button(location):

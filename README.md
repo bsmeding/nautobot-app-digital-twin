@@ -58,7 +58,7 @@ Configure the app in `nautobot_config.py` under `PLUGINS_CONFIG["nautobot_digita
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BACKEND` | `"containerlab"` | Backend to use for deployments. |
+| `BACKEND` | `"containerlab"` | Backend to use for deployments: `containerlab` or `eveng`. |
 | `BACKEND_URLS` | `{}` | Optional backend-specific URLs. |
 | `LOCATION_TYPE_NAME` | `"Site"` | Location type that shows the Digital Twin Start/Stop button (e.g. Site). |
 | `USE_STRICT_SOFTWARE_VERSION` | `True` | Use exact Nautobot software_version for container images (e.g. `ceos:4.34.2F`). When `False`, use default/latest tag. |
@@ -72,12 +72,27 @@ Configure the app in `nautobot_config.py` under `PLUGINS_CONFIG["nautobot_digita
 | `CONTAINERLAB_COMMAND_TIMEOUT_MINUTES` | `5` | Timeout in minutes for remote containerlab commands. |
 | `CONTAINERLAB_REMOTE_TOPOLOGY_DIR` | `"nautobot"` | Subfolder under the SSH user's home for topology files (e.g. `~/nautobot/SiteName/`). |
 | `CONTAINERLAB_PLATFORM_MAP` | `{}` | Map Nautobot platform (lowercase) to containerlab image, e.g. `{"arista_eos": "ceos", "cisco_ios": "ios"}`. |
+| *EVE-NG backend (when `BACKEND=eveng`)* | | |
+| `EVENG_HOST` | `"localhost"` | EVE-NG server hostname or IP. |
+| `EVENG_PROTOCOL` | `"https"` | Protocol: `http` or `https`. |
+| `EVENG_PORT` | `None` | Port (default 443 for https, 80 for http). |
+| `EVENG_USER` | `"admin"` | EVE-NG API username. |
+| `EVENG_PASSWORD` | `"eve"` | EVE-NG API password. |
+| `EVENG_SSL_VERIFY` | `False` | Verify SSL certificates. |
+| `EVENG_CREDENTIALS_SECRETS_GROUP` | `""` | Optional Secrets Group (access type **Generic**) for EVE-NG credentials. |
+| `EVENG_LAB_FOLDER` | `"nautobot"` | Folder path for labs on EVE-NG (e.g. `/nautobot/site-name`). |
+| `EVENG_PLATFORM_MAP` | `{}` | Map Nautobot platform to EVE-NG template or `{"template": str, "image": str}`. E.g. `{"arista_eos": "veos"}` or `{"cisco_ios": {"template": "iosv", "image": "iosv-15.9"}}`. |
 | `DIGITAL_TWIN_ROOT` | `"/opt/nautobot/digital_twin"` | Local path on Nautobot where topology YAML files are written (for inspection). |
 | `DIGITAL_TWIN_JOB_TIMEOUT_MINUTES` | `10` | Job timeout in minutes. |
 | `DIGITAL_TWIN_AUTO_DESTROY_MINUTES` | `1440` | Auto-destroy deployments after this many minutes (0 = disable). Default 24h. |
-| `DIGITAL_TWIN_FALLBACK_AUTH_SECRETS_GROUP` | `""` | Optional Nautobot Secrets Group for digital twin fallback auth (access type **Generic**, Username/Password). Used when appending platform-specific fallback auth to intended configs. |
+| `DIGITAL_TWIN_FALLBACK_AUTH_SECRETS_GROUP` | `""` | Optional Nautobot Secrets Group (access type **Generic**, Username/Password) for `{username}`/`{password}` placeholders in `PLATFORM_ADD_CONFIG_LINES`. When not set, defaults to admin/admin. |
+| `REPLACE_CONFIG_PATTERNS` | `[]` | Replace strings in intended config. List of `(old, new)` tuples. E.g. `[("group radius", "local"), ("group tacacs+", "local")]` for enterprises with RADIUS/TACACS + local fallback. |
+| `PLATFORM_ADD_CONFIG_LINES` | `{}` | Platform-specific config lines to add. Dict: platform_key → list of lines. Use `{username}` and `{password}` placeholders (from `DIGITAL_TWIN_FALLBACK_AUTH_SECRETS_GROUP` or default admin/admin). E.g. `{"arista_eos": ["username {username} privilege 15 role network-admin secret {password}"]}`. *(Previously `PLATFORM_FALLBACK_AUTH`; old name still supported.)* |
+| `PLATFORM_REMOVE_CONFIG_LINES` | `{}` | Platform-specific remove patterns. Dict: platform_key → list of patterns (same format as `REMOVE_CONFIG_LINES`). Applied in addition to global `REMOVE_CONFIG_LINES`. |
+| `USE_PRIMARY_IP_FOR_MGMT` | `True` | When `True`, use Nautobot `primary_ip4` for containerlab mgmt network: extract subnet for `mgmt.ipv4-subnet` and set `mgmt-ipv4` per node. Ensures management IPs match real-world. |
 | `REMOVE_CONFIG_LINES` | `[]` | Patterns to remove from intended config before deploy. When a line contains a pattern, that line and all indented children are removed. E.g. `["GigabitEthernet0/0", "radius-server"]` removes management interface and RADIUS blocks. |
 | `DELETE_CONFIG_AFTER_DESTROY` | `True` | When `True`, remove the site folder (topology + config files) from the containerlab server when the digital twin is destroyed. |
+| `PLATFORM_PUSH_CONFIG` | *(see below)* | Platform-specific config for the "Push Intended Config" job. Dict: `platform_key` → `{"container_path": str, "reload_command": str}`. Defaults: Arista EOS (copy to `/mnt/flash/startup-config`, run `configure replace`); Cisco IOS (copy to `/config/startup-config.cfg`, no reload). Override or extend in `nautobot_config.py`. |
 
 ## Try it out!
 
@@ -99,8 +114,14 @@ Full documentation for this App can be found over on the [Nautobot Docs](https:/
 
 
 ## Running deployments
-See running deployemnts under Apps -> Nautobot Digital Twin -> Digital Twin Deployements
-Here you can see the deployed digital twins, and who started a site. Also possible to end a digital twin (only the owner or a superuser)
+See running deployments under Apps → Nautobot Digital Twin → Digital Twin Deployments.
+Here you can see the deployed digital twins, and who started a site. Also possible to end a digital twin (only the owner or a superuser).
+
+### Push Intended Config
+When Golden Config is installed, use the **Push Intended Config** job (or Job Button on Location) to push updated intended configs to an *already running* digital twin without redeploying. Configs are filtered (REMOVE, REPLACE, ADD), uploaded to the containerlab host, copied into each container, and optionally reloaded per platform (see `PLATFORM_PUSH_CONFIG`).
+
+### Execute and Send Intended Config
+Use the **Execute and Send Intended Config** button to: (1) run Golden Config "Generate Intended Configurations" to create fresh intended configs, (2) push all intended configs to the digital twin backend, and (3) reactivate the new config on each device (platform-specific reload). Requires Golden Config and an already running digital twin.
 
 
 ### Contributing to the Documentation
