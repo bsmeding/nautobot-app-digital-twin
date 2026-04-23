@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from django.conf import settings
-from nautobot.apps.jobs import Job, JobButtonReceiver, ObjectVar, ChoiceVar, StringVar, register_jobs
+from nautobot.apps.jobs import ChoiceVar, Job, JobButtonReceiver, ObjectVar, register_jobs
 from nautobot.dcim.models import Location
 
 

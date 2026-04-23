@@ -25,11 +25,10 @@ def get_credentials_from_secrets_group(secrets_group_name, access_type, obj=None
         return None
 
     try:
-        from nautobot.extras.models import SecretsGroup
         from nautobot.extras.choices import (
-            SecretsGroupAccessTypeChoices,
             SecretsGroupSecretTypeChoices,
         )
+        from nautobot.extras.models import SecretsGroup
     except ImportError as e:
         logger.warning("Cannot import Nautobot Secrets: %s", e)
         return None

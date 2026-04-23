@@ -7,9 +7,9 @@ An app for [Nautobot](https://nautobot.com/) that creates and manages disposable
 - Builds topology definitions from Nautobot `Location`, `Device`, `Interface`, and `Cable` data.
 - Deploys and destroys labs using **containerlab** (SSH to a lab host).
 - Supports Golden Config integration:
-  - deploy with intended config files,
-  - push intended config to running labs,
-  - execute "generate intended config" and push in one workflow.
+    - deploy with intended config files,
+    - push intended config to running labs,
+    - execute "generate intended config" and push in one workflow.
 - Adds Location Job Buttons for quick start/stop operations.
 
 ## Installation

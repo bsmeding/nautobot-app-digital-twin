@@ -1,9 +1,10 @@
-image: python:3.12
+---
+image: "python:3.12"
 
 stages:
-  - lint
-  - docs
-  - deploy
+  - "lint"
+  - "docs"
+  - "deploy"
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
@@ -13,31 +14,31 @@ variables:
 cache:
   key: "${CI_COMMIT_REF_SLUG}"
   paths:
-    - .cache/pip
-    - .cache/pypoetry
-    - .venv
+    - ".cache/pip"
+    - ".cache/pypoetry"
+    - ".venv"
 
 before_script:
-  - python --version
-  - pip install --upgrade pip
-  - pip install poetry
-  - poetry --version
-  - poetry install --with docs --no-interaction
+  - "python --version"
+  - "pip install --upgrade pip"
+  - "pip install poetry"
+  - "poetry --version"
+  - "poetry install --with docs --no-interaction"
 
 docs:build:
-  stage: docs
+  stage: "docs"
   script:
-    - poetry run mkdocs build --strict
+    - "poetry run mkdocs build --strict"
   rules:
     - if: "$CI_PIPELINE_SOURCE == 'merge_request_event'"
     - if: "$CI_COMMIT_BRANCH"
 
 pages:
-  stage: deploy
+  stage: "deploy"
   script:
-    - poetry run mkdocs build --strict -d public
+    - "poetry run mkdocs build --strict -d public"
   artifacts:
     paths:
-      - public
+      - "public"
   rules:
     - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH"

@@ -23,10 +23,9 @@ def get_device_intended_config(device):
         return None
 
     try:
-        from nautobot_golden_config.models import GoldenConfigSetting
-        from nautobot.extras.models import GitRepository
-        from jinja2 import BaseLoader, Environment
         from django.utils.text import slugify
+        from jinja2 import BaseLoader, Environment
+        from nautobot_golden_config.models import GoldenConfigSetting
     except ImportError:
         logger.debug("Golden Config not available for intended config")
         return None

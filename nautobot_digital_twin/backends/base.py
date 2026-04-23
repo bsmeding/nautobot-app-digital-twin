@@ -1,8 +1,6 @@
 # nautobot_digital_twin/backends/base.py
 from abc import ABC, abstractmethod
 
-from nautobot.apps.jobs import JobHookReceiver, register_jobs
-
 
 class DigitalTwinBackend(ABC):
     """Abstract interface for all digital twin backends."""

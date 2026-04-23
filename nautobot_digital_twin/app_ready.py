@@ -15,6 +15,7 @@ def run_ready():
     # Register this app's jobs (so they appear under Jobs → Jobs).
     try:
         from nautobot.apps.jobs import register_jobs
+
         import nautobot_digital_twin.jobs as jobs_module  # pylint:disable=import-outside-toplevel
 
         job_list = getattr(jobs_module, "jobs", [])

@@ -1,10 +1,10 @@
 """Tests for config_filter module."""
 
 from nautobot_digital_twin.config_filter import (
+    build_minimal_config_from_add_lines,
+    filter_config_append_add_lines,
     filter_config_remove_blocks,
     filter_config_replace,
-    filter_config_append_add_lines,
-    build_minimal_config_from_add_lines,
 )
 
 

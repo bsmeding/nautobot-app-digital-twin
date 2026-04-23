@@ -9,5 +9,6 @@ rules:
   quoted-strings:
     quote-type: "double"
 ignore: |
+  .lint-venv/
   .venv/
   compose.yaml

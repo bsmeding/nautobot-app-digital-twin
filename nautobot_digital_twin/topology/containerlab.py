@@ -4,8 +4,8 @@ Used when backend is containerlab: build YAML from site data, then upload to con
 """
 
 import ipaddress
-import re
 import logging
+import re
 
 from django.contrib.contenttypes.models import ContentType
 from nautobot.dcim.models import Cable, Device, Interface

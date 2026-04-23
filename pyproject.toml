@@ -120,10 +120,21 @@ ignore = [
     "D213", # Multi-line docstring summary should start at the second line
 
     # Produces a lot of issues in the current codebase.
+    "D100", # Missing docstring in public module
+    "D101", # Missing docstring in public class
+    "D102", # Missing docstring in public method
+    "D104", # Missing docstring in public package
+    "D105", # Missing docstring in magic method
+    "D106", # Missing docstring in public nested class
+    "D200", # One-line docstring should fit on one line
+    "D205", # 1 blank line required between summary line and description
     "D401", # First line of docstring should be in imperative mood
     "D407", # Missing dashed underline after section
+    "D415", # First line should end with punctuation
     "D416", # Section name ends in colon
     "E501", # Line too long
+    "S507", # Paramiko host key policy warning
+    "S701", # Jinja autoescape warning (not applicable for device configs)
 ]
 
 [tool.ruff.lint.pydocstyle]

@@ -1,0 +1,6 @@
+#!/Users/bsmeding/git/NAUTOBOT/nautobot-app-nautobot-digital-twin/.lint-venv/bin/python3.12
+import sys
+from pymarkdown.__main__ import main
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(main())

@@ -5,8 +5,8 @@ import re
 from contextlib import contextmanager
 
 import paramiko
-
 from nautobot.dcim.models import Device
+
 from nautobot_digital_twin.plugin_config import get_plugin_config
 from nautobot_digital_twin.secrets_utils import get_credentials_from_secrets_group
 from nautobot_digital_twin.topology import build_containerlab_yaml, get_required_images_for_location
@@ -185,13 +185,13 @@ class ContainerlabBackend(DigitalTwinBackend):
         REMOVE_CONFIG_LINES, PLATFORM_REMOVE_CONFIG_LINES, REPLACE_CONFIG_PATTERNS, and
         PLATFORM_ADD_CONFIG_LINES are applied before upload.
         """
-        from nautobot_digital_twin.golden_config_intended import get_device_intended_config
         from nautobot_digital_twin.config_filter import (
+            build_minimal_config_from_add_lines,
+            filter_config_append_add_lines,
             filter_config_remove_blocks,
             filter_config_replace,
-            filter_config_append_add_lines,
-            build_minimal_config_from_add_lines,
         )
+        from nautobot_digital_twin.golden_config_intended import get_device_intended_config
         from nautobot_digital_twin.secrets_utils import get_fallback_auth_credentials
 
         cfg = get_plugin_config()

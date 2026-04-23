@@ -1,10 +1,11 @@
 # Generated migration for DigitalTwinDeployment model
 
+import uuid
+
 import django.core.serializers.json
 import django.db.models.deletion
-from django.db import migrations, models
 import nautobot.core.models.fields
-import uuid
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):

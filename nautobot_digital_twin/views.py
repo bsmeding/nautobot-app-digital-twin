@@ -3,7 +3,6 @@
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.views import View
-
 from nautobot.apps.views import NautobotUIViewSet
 
 from nautobot_digital_twin import filters, forms, models, tables
