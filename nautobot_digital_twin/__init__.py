@@ -15,7 +15,7 @@ class NautobotDigitalTwinConfig(NautobotAppConfig):
     version = __version__
     author = "b@rtsmeding IT"
     description = "Nautobot Digital Twin."
-    base_url = "nautobot-digital-twin"
+    base_url = "nautobot-app-digital-twin"
     required_settings = []
     default_settings = {
         "BACKEND": "containerlab",

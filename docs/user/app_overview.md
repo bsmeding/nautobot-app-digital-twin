@@ -7,24 +7,25 @@ This document provides an overview of the App including critical information and
 
 ## Description
 
+Nautobot Digital Twin lets operators instantiate lab environments directly from Nautobot data so topologies can be validated, tested, and iterated safely.
+
+The app creates backend-specific topology artifacts from Nautobot objects and orchestrates lab lifecycle operations (start/stop, config push, cleanup) through Nautobot jobs.
 
 ## Audience (User Personas) - Who should use this App?
 
-!!! warning "Developer Note - Remove Me!"
-    Who is this meant for/ who is the common user of this app?
+- Network automation engineers building and validating topology-driven workflows.
+- NetDevOps and platform teams validating intended configurations before production rollout.
+- Lab and test engineers who need repeatable "from source of truth" ephemeral environments.
 
 ## Authors and Maintainers
 
-!!! warning "Developer Note - Remove Me!"
-    Add the team and/or the main individuals maintaining this project. Include historical maintainers as well.
+The app is maintained in the `bsmeding/nautobot-app-nautobot-app-digital-twin` repository. Use repository issues and pull requests for maintenance and contribution workflows.
 
 ## Nautobot Features Used
 
-!!! warning "Developer Note - Remove Me!"
-    What is shown today in the Installed Apps page in Nautobot. What parts of Nautobot does it interact with, what does it add etc. ?
+The app integrates with core Nautobot models (Locations, Devices, Interfaces, Cables), Jobs, and optional integrations such as Golden Config and Secrets.
 
 ### Extras
 
-!!! warning "Developer Note - Remove Me!"
-    Custom Fields - things like which CFs are created by this app?
-    Jobs - are jobs, if so, which ones, installed by this app?
+- Jobs are provided to create, update, and operate digital twin environments.
+- Optional Job Buttons are available for Location objects to start and stop digital twins quickly.

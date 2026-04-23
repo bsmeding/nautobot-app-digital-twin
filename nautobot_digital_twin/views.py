@@ -27,7 +27,7 @@ class DigitalTwinTopologyExportView(View):
     """
     Return the containerlab YAML topology for the Location of a given deployment as a file download.
     Generates the YAML fresh from current Nautobot DCIM data (same as deploy would produce).
-    URL: /plugins/nautobot-digital-twin/digital-twin-deployments/<pk>/topology.yaml
+    URL: /plugins/nautobot-app-digital-twin/digital-twin-deployments/<pk>/topology.yaml
     """
 
     def get(self, request, pk):

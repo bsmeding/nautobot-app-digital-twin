@@ -11,7 +11,7 @@ on: # yamllint disable-line rule:truthy rule:comments
   pull_request: ~
 
 env:
-  APP_NAME: "nautobot-digital-twin"
+  APP_NAME: "nautobot-app-digital-twin"
 
 jobs:
   generate-lockfile:

@@ -1,6 +1,6 @@
 ---
 name: 🐛 Bug Report
-about: Report a reproducible bug in the current release of nautobot-digital-twin
+about: Report a reproducible bug in the current release of nautobot-app-digital-twin
 labels:
   - "type: bug"
 ---
@@ -8,7 +8,7 @@ labels:
 ### Environment
 * Python version:  <!-- Example: 3.11.4 -->
 * Nautobot version:  <!-- Example: 3.0.0 -->
-* nautobot-digital-twin version:  <!-- Example: 1.0.0 -->
+* nautobot-app-digital-twin version:  <!-- Example: 1.0.0 -->
 
 <!-- What did you expect to happen? -->
 ### Expected Behavior

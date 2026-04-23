@@ -2,37 +2,35 @@
 
 Here you will find detailed instructions on how to **install** and **configure** the App within your Nautobot environment.
 
-!!! warning "Developer Note - Remove Me!"
-    Detailed instructions on installing the App. You will need to update this section based on any additional dependencies or prerequisites.
-
 ## Prerequisites
 
 - The app is compatible with Nautobot 3.0.0 and higher.
-- Databases supported: PostgreSQL, MySQL
+- Database backend: PostgreSQL (standard Nautobot production backend).
 
 !!! note
     Please check the [dedicated page](compatibility_matrix.md) for a full compatibility matrix and the deprecation policy.
 
 ### Access Requirements
 
-!!! warning "Developer Note - Remove Me!"
-    What external systems (if any) it needs access to in order to work.
+- SSH connectivity from Nautobot workers to your containerlab host when using the `containerlab` backend.
+- API or web connectivity to your EVE-NG server when using the `eveng` backend.
+- Optional access to configured Git repositories when using Golden Config intended config workflows.
 
 ## Install Guide
 
 !!! note
-    Apps can be installed from the [Python Package Index](https://pypi.org/) or locally. See the [Nautobot documentation](https://docs.nautobot.com/projects/core/en/stable/user-guide/administration/installation/app-install/) for more details. The pip package name for this app is [`nautobot-digital-twin`](https://pypi.org/project/nautobot-digital-twin/).
+    Apps can be installed from the [Python Package Index](https://pypi.org/) or locally. See the [Nautobot documentation](https://docs.nautobot.com/projects/core/en/stable/user-guide/administration/installation/app-install/) for more details. The pip package name for this app is [`nautobot-app-digital-twin`](https://pypi.org/project/nautobot-app-digital-twin/).
 
 The app is available as a Python package via PyPI and can be installed with `pip`:
 
 ```shell
-pip install nautobot-digital-twin
+pip install nautobot-app-digital-twin
 ```
 
-To ensure Nautobot Digital Twin is automatically re-installed during future upgrades, create a file named `local_requirements.txt` (if not already existing) in the Nautobot root directory (alongside `requirements.txt`) and list the `nautobot-digital-twin` package:
+To ensure Nautobot Digital Twin is automatically re-installed during future upgrades, create a file named `local_requirements.txt` (if not already existing) in the Nautobot root directory (alongside `requirements.txt`) and list the `nautobot-app-digital-twin` package:
 
 ```shell
-echo nautobot-digital-twin >> local_requirements.txt
+echo nautobot-app-digital-twin >> local_requirements.txt
 ```
 
 Once installed, the app needs to be enabled in your Nautobot configuration. The following block of code below shows the additional configuration required to be added to your `nautobot_config.py` file:
@@ -79,13 +77,16 @@ Then open **Jobs → Job Buttons** to confirm; enable **Start Digital Twin (Job 
 
 ## App Configuration
 
-!!! warning "Developer Note - Remove Me!"
-    Any configuration required to get the App set up. Edit the table below as per the examples provided.
+Configure the app under `PLUGINS_CONFIG["nautobot_digital_twin"]` in `nautobot_config.py`.
 
-The app behavior can be controlled with the following list of settings:
+Common settings:
 
-| Key     | Example | Default | Description                          |
-| ------- | ------ | -------- | ------------------------------------- |
-| `enable_backup` | `True` | `True` | A boolean to represent whether or not to run backup configurations within the app. |
-| `platform_slug_map` | `{"cisco_wlc": "cisco_aireos"}` | `None` | A dictionary in which the key is the platform slug and the value is what netutils uses in any "network_os" parameter. |
-| `per_feature_bar_width` | `0.15` | `0.15` | The width of the table bar within the overview report |
+- `BACKEND`: `containerlab` or `eveng`.
+- `LOCATION_TYPE_NAME`: Location type for Start/Stop Digital Twin job buttons.
+- `CONTAINERLAB_SSH_HOST`, `CONTAINERLAB_SSH_PORT`, `CONTAINERLAB_SSH_USER`, `CONTAINERLAB_SSH_PASSWORD`.
+- `CONTAINERLAB_SSH_CREDENTIALS_SECRETS_GROUP`: optional Secrets Group override for containerlab credentials.
+- `CONTAINERLAB_PLATFORM_MAP` and `EVENG_PLATFORM_MAP`: platform-to-backend mapping.
+- `REMOVE_CONFIG_LINES`, `REPLACE_CONFIG_PATTERNS`, and `PLATFORM_ADD_CONFIG_LINES`: intended config transformation rules.
+- `DIGITAL_TWIN_AUTO_DESTROY_MINUTES`: lab auto-destroy timeout.
+
+For a complete and current list, see the project `README.md` and the in-code default settings in `nautobot_digital_twin/__init__.py`.

@@ -53,7 +53,7 @@ namespace.configure(
     {
         "nautobot_digital_twin": {
             "nautobot_ver": "3.0.0",
-            "project_name": "nautobot-digital-twin",
+            "project_name": "nautobot-app-digital-twin",
             "python_ver": "3.12",
             "local": False,
             "compose_dir": os.path.join(os.path.dirname(__file__), "development"),

@@ -2,8 +2,7 @@
 
 This document describes external dependencies and prerequisites for this App to operate, including system requirements, API endpoints, interconnection or integrations to other applications or services, and similar topics.
 
-!!! warning "Developer Note - Remove Me!"
-    Optional page, remove if not applicable.
+This app can orchestrate external systems depending on configured backend and integrations.
 
 ## External System Integrations
 
@@ -13,5 +12,4 @@ This document describes external dependencies and prerequisites for this App to 
 
 ## Nautobot REST API endpoints
 
-!!! warning "Developer Note - Remove Me!"
-    API documentation in this doc - including python request examples, curl examples, postman collections referred etc.
+The app primarily operates through Nautobot Jobs and model interactions inside Nautobot. Standard Nautobot REST endpoints for related objects (Locations, Devices, Interfaces, Cables, Secrets) remain available for automation workflows.

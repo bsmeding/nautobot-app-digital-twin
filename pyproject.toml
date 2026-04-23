@@ -1,17 +1,17 @@
 [tool.poetry]
-name = "nautobot-digital-twin"
+name = "nautobot-app-digital-twin"
 version = "0.1.0"
 description = "Nautobot Digital Twin"
 authors = ["b@rtsmeding IT <b@rtsmeding.nl>"]
 license = "Apache-2.0"
 readme = "README.md"
-homepage = "https://github.com/bsmeding/nautobot-app-nautobot-digital-twin"
-repository = "https://github.com/bsmeding/nautobot-app-nautobot-digital-twin"
-documentation = "https://netdevops.it/projects/nautobot-digital-twin//"
+homepage = "https://github.com/bsmeding/nautobot-app-nautobot-app-digital-twin"
+repository = "https://github.com/bsmeding/nautobot-app-nautobot-app-digital-twin"
+documentation = "https://netdevops.it/projects/nautobot-app-digital-twin/"
 keywords = ["nautobot", "nautobot-app", "nautobot-plugin"]
 classifiers = [
     "Intended Audience :: Developers",
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -167,7 +167,7 @@ directory = "changes"
 filename = "docs/admin/release_notes/version_X.Y.md"
 template = "development/towncrier_template.j2"
 start_string = "<!-- towncrier release notes start -->"
-issue_format = "[#{issue}](https://github.com/bsmeding/nautobot-app-nautobot-digital-twin/issues/{issue})"
+issue_format = "[#{issue}](https://github.com/bsmeding/nautobot-app-nautobot-app-digital-twin/issues/{issue})"
 
 [[tool.towncrier.type]]
 directory = "breaking"
