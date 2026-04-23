@@ -4,7 +4,20 @@ from importlib import metadata
 
 from nautobot.apps import NautobotAppConfig, nautobot_database_ready
 
-__version__ = metadata.version(__name__)
+
+def _resolve_version():
+    """Resolve package version when installed; fallback for source-only imports."""
+    # In CI lint containers the plugin module can be imported from /source without
+    # installed distribution metadata; avoid crashing plugin import in that case.
+    for dist_name in ("nautobot-app-digital-twin", __name__):
+        try:
+            return metadata.version(dist_name)
+        except metadata.PackageNotFoundError:
+            continue
+    return "0.0.0"
+
+
+__version__ = _resolve_version()
 
 
 class NautobotDigitalTwinConfig(NautobotAppConfig):
