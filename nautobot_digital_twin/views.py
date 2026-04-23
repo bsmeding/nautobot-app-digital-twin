@@ -12,6 +12,7 @@ from nautobot_digital_twin.api import serializers
 class NautobotDigitalTwinExampleModelUIViewSet(NautobotUIViewSet):
     """ViewSet for scaffold example model used by plugin test suite."""
 
+    bulk_update_form_class = forms.NautobotDigitalTwinExampleModelBulkEditForm
     filterset_class = filters.NautobotDigitalTwinExampleModelFilterSet
     filterset_form_class = forms.NautobotDigitalTwinExampleModelFilterForm
     form_class = forms.NautobotDigitalTwinExampleModelForm
