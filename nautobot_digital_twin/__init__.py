@@ -61,18 +61,6 @@ class NautobotDigitalTwinConfig(NautobotAppConfig):
         # Simple format: platform -> image (e.g. {"arista_eos": "ceos", "cisco_ios": "ios"}).
         # When empty, built-in mapping is used (eos/ceos/veos -> ceos).
         "CONTAINERLAB_PLATFORM_MAP": {},
-        # EVE-NG backend settings (when BACKEND=eveng)
-        "EVENG_HOST": "localhost",
-        "EVENG_PROTOCOL": "https",
-        "EVENG_PORT": None,
-        "EVENG_USER": "admin",
-        "EVENG_PASSWORD": "eve",
-        "EVENG_SSL_VERIFY": False,
-        "EVENG_CREDENTIALS_SECRETS_GROUP": "",
-        "EVENG_LAB_FOLDER": "nautobot",
-        # Map Nautobot platform (lowercase) to EVE-NG template or {"template": str, "image": str}.
-        # E.g. {"arista_eos": "veos"} or {"arista_eos": {"template": "veos", "image": "veos-4.34.2F"}}.
-        "EVENG_PLATFORM_MAP": {},
         # When True, use Nautobot primary_ip4 for containerlab mgmt network (extract subnet, set mgmt-ipv4 per node).
         "USE_PRIMARY_IP_FOR_MGMT": True,
         # Remove config blocks from intended config before digital twin deploy.

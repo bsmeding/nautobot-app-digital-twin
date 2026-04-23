@@ -2,7 +2,7 @@
 
 This document describes external dependencies and prerequisites for this App to operate, including system requirements, API endpoints, interconnection or integrations to other applications or services, and similar topics.
 
-This app can orchestrate external systems depending on configured backend and integrations.
+This app orchestrates a **containerlab** host over SSH (topology deploy/destroy) and optional integrations such as Golden Config.
 
 ## External System Integrations
 

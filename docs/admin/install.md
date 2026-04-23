@@ -12,8 +12,7 @@ Here you will find detailed instructions on how to **install** and **configure**
 
 ### Access Requirements
 
-- SSH connectivity from Nautobot workers to your containerlab host when using the `containerlab` backend.
-- API or web connectivity to your EVE-NG server when using the `eveng` backend.
+- SSH connectivity from Nautobot workers to your containerlab host.
 - Optional access to configured Git repositories when using Golden Config intended config workflows.
 
 ## Install Guide
@@ -81,11 +80,11 @@ Configure the app under `PLUGINS_CONFIG["nautobot_digital_twin"]` in `nautobot_c
 
 Common settings:
 
-- `BACKEND`: `containerlab` or `eveng`.
+- `BACKEND`: `containerlab` (required; only supported value).
 - `LOCATION_TYPE_NAME`: Location type for Start/Stop Digital Twin job buttons.
 - `CONTAINERLAB_SSH_HOST`, `CONTAINERLAB_SSH_PORT`, `CONTAINERLAB_SSH_USER`, `CONTAINERLAB_SSH_PASSWORD`.
 - `CONTAINERLAB_SSH_CREDENTIALS_SECRETS_GROUP`: optional Secrets Group override for containerlab credentials.
-- `CONTAINERLAB_PLATFORM_MAP` and `EVENG_PLATFORM_MAP`: platform-to-backend mapping.
+- `CONTAINERLAB_PLATFORM_MAP`: map Nautobot platforms to containerlab node definitions.
 - `REMOVE_CONFIG_LINES`, `REPLACE_CONFIG_PATTERNS`, and `PLATFORM_ADD_CONFIG_LINES`: intended config transformation rules.
 - `DIGITAL_TWIN_AUTO_DESTROY_MINUTES`: lab auto-destroy timeout.
 

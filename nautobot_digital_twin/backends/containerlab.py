@@ -33,7 +33,7 @@ def _get_ssh_access_type():
 
 
 class ContainerlabBackend(DigitalTwinBackend):
-    """Containerlab backend; uses backend_url from app config BACKEND_URLS if set."""
+    """Containerlab backend; uses BACKEND_URLS['containerlab'] when set."""
 
     def get_connection_params(self):
         """Return (host, port, user, password, key_path) from plugin config or Secrets Group."""

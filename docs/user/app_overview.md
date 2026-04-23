@@ -9,7 +9,7 @@ This document provides an overview of the App including critical information and
 
 Nautobot Digital Twin lets operators instantiate lab environments directly from Nautobot data so topologies can be validated, tested, and iterated safely.
 
-The app creates backend-specific topology artifacts from Nautobot objects and orchestrates lab lifecycle operations (start/stop, config push, cleanup) through Nautobot jobs.
+The app generates **containerlab** topology artifacts from Nautobot objects and orchestrates lab lifecycle operations (start/stop, config push, cleanup) through Nautobot jobs.
 
 ## Audience (User Personas) - Who should use this App?
 

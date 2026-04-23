@@ -5,7 +5,7 @@ An app for [Nautobot](https://nautobot.com/) that creates and manages disposable
 ## What this app does
 
 - Builds topology definitions from Nautobot `Location`, `Device`, `Interface`, and `Cable` data.
-- Deploys and destroys labs using `containerlab` (and supports an EVE-NG backend).
+- Deploys and destroys labs using **containerlab** (SSH to a lab host).
 - Supports Golden Config integration:
   - deploy with intended config files,
   - push intended config to running labs,
@@ -54,7 +54,7 @@ nautobot-server ensure_digital_twin_job_buttons
 
 Common `PLUGINS_CONFIG["nautobot_digital_twin"]` settings:
 
-- `BACKEND`: `containerlab` or `eveng`
+- `BACKEND`: must be `containerlab` (only supported backend)
 - `LOCATION_TYPE_NAME`: Location type where Start/Stop buttons are shown
 - `CONTAINERLAB_SSH_*`: credentials/host for remote containerlab server
 - `CONTAINERLAB_PLATFORM_MAP`: map platform names to node kind/image

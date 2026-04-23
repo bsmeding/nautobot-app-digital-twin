@@ -8,7 +8,7 @@ class DigitalTwinBackend(ABC):
 
     def __init__(self, backend_url=None):
         """
-        backend_url: optional URL for the backend (e.g. Containerlab API) from app config BACKEND_URLS.
+        backend_url: optional URL for Containerlab from app config BACKEND_URLS["containerlab"].
         """
         self.backend_url = backend_url
 

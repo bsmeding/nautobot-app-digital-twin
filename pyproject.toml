@@ -5,8 +5,8 @@ description = "Nautobot Digital Twin"
 authors = ["b@rtsmeding IT <b@rtsmeding.nl>"]
 license = "Apache-2.0"
 readme = "README.md"
-homepage = "https://github.com/bsmeding/nautobot-app-nautobot-app-digital-twin"
-repository = "https://github.com/bsmeding/nautobot-app-nautobot-app-digital-twin"
+homepage = "https://github.com/bsmeding/nautobot-app-digital-twin"
+repository = "https://github.com/bsmeding/nautobot-app-digital-twin"
 documentation = "https://netdevops.it/projects/nautobot-app-digital-twin/"
 keywords = ["nautobot", "nautobot-app", "nautobot-plugin"]
 classifiers = [
@@ -32,8 +32,6 @@ python = ">=3.10,<3.14"
 nautobot = ">=3.0.0,<4.0.0"
 # Topology generation (containerlab YAML)
 pyyaml = "*"
-# EVE-NG backend (only needed when BACKEND=eveng)
-eve-ng = "*"
 
 [tool.poetry.group.dev.dependencies]
 coverage = "*"

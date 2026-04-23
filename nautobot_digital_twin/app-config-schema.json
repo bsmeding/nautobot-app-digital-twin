@@ -5,7 +5,7 @@
     "BACKEND": {
       "type": "string",
       "default": "containerlab",
-      "description": "Active digital twin backend (e.g. containerlab)."
+      "description": "Digital twin backend; only \"containerlab\" is supported."
     },
     "BACKEND_URLS": {
       "type": "object",

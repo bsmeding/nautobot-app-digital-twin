@@ -1,21 +1,17 @@
 # nautobot_digital_twin/backends/__init__.py
+import logging
+
 from nautobot_digital_twin.utils import get_plugin_config
 
 from .base import DigitalTwinBackend
 from .containerlab import ContainerlabBackend
 
-try:
-    from .eveng import EveNGBackend
-    _EVENG_AVAILABLE = True
-except ImportError:
-    EveNGBackend = None
-    _EVENG_AVAILABLE = False
+logger = logging.getLogger(__name__)
 
+_DEFAULT_BACKEND = "containerlab"
 _BACKENDS = {
-    "containerlab": ContainerlabBackend,
+    _DEFAULT_BACKEND: ContainerlabBackend,
 }
-if _EVENG_AVAILABLE:
-    _BACKENDS["eveng"] = EveNGBackend
 
 
 def get_available_backend_names():
@@ -24,12 +20,20 @@ def get_available_backend_names():
 
 
 def get_backend(name=None) -> DigitalTwinBackend:
-    """Return an instance of the given or configured backend (with URL from config if set)."""
+    """Return the Containerlab backend (only supported implementation)."""
     cfg = get_plugin_config()
-    backend_name = name if name is not None else cfg.get("BACKEND", "containerlab")
-    backend_cls = _BACKENDS.get(backend_name)
-    if backend_cls is None:
-        raise ValueError(f"Unknown digital twin backend: {backend_name}")
+    requested = name if name is not None else cfg.get("BACKEND", _DEFAULT_BACKEND)
+    if not isinstance(requested, str):
+        requested = str(requested)
+    requested_norm = requested.strip().lower()
+    if requested_norm != _DEFAULT_BACKEND:
+        logger.warning(
+            "Digital Twin backend %r is not supported (only %r is available); using %r.",
+            requested,
+            _DEFAULT_BACKEND,
+            _DEFAULT_BACKEND,
+        )
+    backend_cls = _BACKENDS[_DEFAULT_BACKEND]
     backend_urls = cfg.get("BACKEND_URLS") or {}
-    backend_url = backend_urls.get(backend_name) if isinstance(backend_urls, dict) else None
+    backend_url = backend_urls.get(_DEFAULT_BACKEND) if isinstance(backend_urls, dict) else None
     return backend_cls(backend_url=backend_url)
