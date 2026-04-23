@@ -1,7 +1,6 @@
 
 .temp
 .ruff-venv/
-.claude
 
 # Ansible Retry Files
 *.retry
