@@ -10,6 +10,7 @@ from nautobot_digital_twin import views
 app_name = "nautobot_digital_twin"
 router = NautobotUIViewSetRouter()
 
+router.register("nautobot-app-digital-twin-example-models", views.NautobotDigitalTwinExampleModelUIViewSet)
 router.register("digital-twin-deployments", views.DigitalTwinDeploymentUIViewSet)
 
 urlpatterns = [

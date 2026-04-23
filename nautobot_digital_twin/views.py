@@ -9,6 +9,17 @@ from nautobot_digital_twin import filters, forms, models, tables
 from nautobot_digital_twin.api import serializers
 
 
+class NautobotDigitalTwinExampleModelUIViewSet(NautobotUIViewSet):
+    """ViewSet for scaffold example model used by plugin test suite."""
+
+    filterset_class = filters.NautobotDigitalTwinExampleModelFilterSet
+    filterset_form_class = forms.NautobotDigitalTwinExampleModelFilterForm
+    form_class = forms.NautobotDigitalTwinExampleModelForm
+    queryset = models.NautobotDigitalTwinExampleModel.objects.all()
+    serializer_class = serializers.NautobotDigitalTwinExampleModelSerializer
+    table_class = tables.NautobotDigitalTwinExampleModelTable
+
+
 class DigitalTwinDeploymentUIViewSet(NautobotUIViewSet):
     """ViewSet for Digital Twin Deployment list and detail (created by Start/Stop jobs)."""
 
