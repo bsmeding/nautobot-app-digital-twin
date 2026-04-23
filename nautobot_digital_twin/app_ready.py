@@ -2,6 +2,7 @@
 App ready hook: register jobs and ensure DIGITAL_TWIN_ROOT exists.
 Keeps cookiecutter __init__.py minimal by moving logic here.
 """
+
 import logging
 import os
 from pathlib import Path

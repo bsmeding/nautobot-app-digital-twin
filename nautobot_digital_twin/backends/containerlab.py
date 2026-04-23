@@ -27,6 +27,7 @@ def _get_ssh_access_type():
     """Return the SSH access type constant (handles Nautobot version differences)."""
     try:
         from nautobot.extras.choices import SecretsGroupAccessTypeChoices
+
         return getattr(SecretsGroupAccessTypeChoices, "TYPE_SSH", "ssh")
     except (ImportError, AttributeError):
         return "ssh"
@@ -64,13 +65,19 @@ class ContainerlabBackend(DigitalTwinBackend):
         try:
             if key_path and os.path.exists(key_path):
                 client.connect(
-                    hostname=host, port=port, username=user,
-                    key_filename=key_path, timeout=connect_timeout,
+                    hostname=host,
+                    port=port,
+                    username=user,
+                    key_filename=key_path,
+                    timeout=connect_timeout,
                 )
             else:
                 client.connect(
-                    hostname=host, port=port, username=user,
-                    password=password, timeout=connect_timeout,
+                    hostname=host,
+                    port=port,
+                    username=user,
+                    password=password,
+                    timeout=connect_timeout,
                 )
             logger.debug("SSH connected to %s:%s", host, port)
             yield client
@@ -215,7 +222,11 @@ class ContainerlabBackend(DigitalTwinBackend):
             all_remove_patterns = list(remove_patterns) + list(platform_remove_config_lines.get(platform_key) or [])
             if all_remove_patterns:
                 config_content = filter_config_remove_blocks(config_content, all_remove_patterns)
-                log("Filtered intended config for %s (REMOVE_CONFIG_LINES + PLATFORM_REMOVE: %s)", device.name, all_remove_patterns)
+                log(
+                    "Filtered intended config for %s (REMOVE_CONFIG_LINES + PLATFORM_REMOVE: %s)",
+                    device.name,
+                    all_remove_patterns,
+                )
             if replace_patterns:
                 config_content = filter_config_replace(config_content, replace_patterns)
                 log("Applied REPLACE_CONFIG_PATTERNS for %s", device.name)
@@ -290,6 +301,7 @@ class ContainerlabBackend(DigitalTwinBackend):
 
     def deploy_site(self, site, job=None, config_source="empty_config"):
         """Deploy digital twin: generate topology, upload to server, run containerlab deploy."""
+
         def log(msg, *args):
             if job:
                 job.logger.info(msg, *args)
@@ -316,12 +328,17 @@ class ContainerlabBackend(DigitalTwinBackend):
                 log("Attempting to pull missing image(s): %s", ", ".join(missing))
                 pull_ok, pull_failed = self._pull_missing_images(missing, log)
                 if not pull_ok:
-                    msg = "Failed to pull image(s): %s. Check network access and image name, or adjust CONTAINERLAB_PLATFORM_MAP." % ", ".join(pull_failed)
+                    msg = (
+                        "Failed to pull image(s): %s. Check network access and image name, or adjust CONTAINERLAB_PLATFORM_MAP."
+                        % ", ".join(pull_failed)
+                    )
                     log(msg)
                     return 1, "", msg
                 ok, still_missing = self._check_images_exist_on_server(missing, log)
                 if not ok:
-                    msg = "Image(s) still missing after pull: %s. Adjust CONTAINERLAB_PLATFORM_MAP." % ", ".join(still_missing)
+                    msg = "Image(s) still missing after pull: %s. Adjust CONTAINERLAB_PLATFORM_MAP." % ", ".join(
+                        still_missing
+                    )
                     log(msg)
                     return 1, "", msg
                 log("Successfully pulled missing image(s).")
@@ -356,6 +373,7 @@ class ContainerlabBackend(DigitalTwinBackend):
         uploads to the containerlab host, then for each device: docker cp into container
         and optionally runs a platform-specific reload command (from PLATFORM_PUSH_CONFIG).
         """
+
         def log(msg, *args):
             if job:
                 job.logger.info(msg, *args)

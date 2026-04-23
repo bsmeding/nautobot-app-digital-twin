@@ -1,4 +1,5 @@
 """Tests for config_filter module."""
+
 from nautobot_digital_twin.config_filter import (
     filter_config_remove_blocks,
     filter_config_replace,

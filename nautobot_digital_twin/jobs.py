@@ -4,6 +4,7 @@ from django.conf import settings
 from nautobot.apps.jobs import Job, JobButtonReceiver, ObjectVar, ChoiceVar, StringVar, register_jobs
 from nautobot.dcim.models import Location
 
+
 def _get_config_source_choices():
     choices = [("empty_config", "Empty config")]
     if getattr(settings, "PLUGINS", None) and "nautobot_golden_config" in settings.PLUGINS:
@@ -22,6 +23,7 @@ BACKEND_NAME = "containerlab"
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_job_user(job):
     """Return the user who initiated the job."""
@@ -136,9 +138,7 @@ def _run_digital_twin_deploy(job, location, backend_name=None, config_source="em
         job.logger.warning("stderr: %s", err.strip() or "(empty)")
 
     if exit_status != 0:
-        job.logger.failure(
-            "Remote command failed (exit %s). stderr: %s", exit_status, err.strip() if err else "(none)"
-        )
+        job.logger.failure("Remote command failed (exit %s). stderr: %s", exit_status, err.strip() if err else "(none)")
         if err and "no such file or directory" in err.lower():
             job.logger.warning(
                 "Ensure the topology file exists on the containerlab server at "
@@ -225,6 +225,7 @@ def _run_digital_twin_destroy(job, location, backend_name=None, mark_destroyed_e
 # Jobs
 # ---------------------------------------------------------------------------
 
+
 class StartDigitalTwinJob(Job):
     """Start a digital twin for a chosen Location (manual run)."""
 
@@ -236,8 +237,11 @@ class StartDigitalTwinJob(Job):
         time_limit = 660
 
     location = ObjectVar(model=Location, description="Location to deploy.")
-    config_source = ChoiceVar(choices=CONFIG_SOURCE_CHOICES, default="empty_config",
-                              description="Config source: empty or Golden Config intended.")
+    config_source = ChoiceVar(
+        choices=CONFIG_SOURCE_CHOICES,
+        default="empty_config",
+        description="Config source: empty or Golden Config intended.",
+    )
 
     def run(self, location, config_source, **kwargs):
         _run_digital_twin_deploy(self, location, backend_name=BACKEND_NAME, config_source=config_source)
@@ -255,13 +259,16 @@ class StartDigitalTwinJobButtonReceiver(JobButtonReceiver):
 
     def run(self, object_pk, object_model_name, **kwargs):
         from django.contrib.contenttypes.models import ContentType
+
         ct = ContentType.objects.get_by_natural_key(
             *object_model_name.split(".", 1) if "." in object_model_name else ("dcim", object_model_name)
         )
         location = ct.get_object_for_this_type(pk=object_pk)
         if not isinstance(location, Location):
             raise ValueError(f"Expected Location, got {type(location).__name__}")
-        config_source = "intended_config" if "intended_config" in (c[0] for c in CONFIG_SOURCE_CHOICES) else "empty_config"
+        config_source = (
+            "intended_config" if "intended_config" in (c[0] for c in CONFIG_SOURCE_CHOICES) else "empty_config"
+        )
         _run_digital_twin_deploy(self, location, config_source=config_source)
 
 
@@ -293,6 +300,7 @@ class StopDigitalTwinJobButtonReceiver(JobButtonReceiver):
 
     def run(self, object_pk, object_model_name, **kwargs):
         from django.contrib.contenttypes.models import ContentType
+
         ct = ContentType.objects.get_by_natural_key(
             *object_model_name.split(".", 1) if "." in object_model_name else ("dcim", object_model_name)
         )
@@ -330,9 +338,11 @@ def _run_execute_and_send_intended_config(job, location, backend_name=None):
         JobOrModel = None
         try:
             from nautobot.extras.models import JobModel
+
             JobOrModel = JobModel
         except ImportError:
             from nautobot.extras.models import Job
+
             JobOrModel = Job
 
         intended_job = JobOrModel.objects.filter(job_class_name="IntendedJob").first()
@@ -471,9 +481,7 @@ class PushIntendedConfigJobButtonReceiver(JobButtonReceiver):
         from django.contrib.contenttypes.models import ContentType
 
         ct = ContentType.objects.get_by_natural_key(
-            *object_model_name.split(".", 1)
-            if "." in object_model_name
-            else ("dcim", object_model_name)
+            *object_model_name.split(".", 1) if "." in object_model_name else ("dcim", object_model_name)
         )
         location = ct.get_object_for_this_type(pk=object_pk)
         if not isinstance(location, Location):
@@ -521,9 +529,7 @@ class ExecuteAndSendIntendedConfigJobButtonReceiver(JobButtonReceiver):
         from django.contrib.contenttypes.models import ContentType
 
         ct = ContentType.objects.get_by_natural_key(
-            *object_model_name.split(".", 1)
-            if "." in object_model_name
-            else ("dcim", object_model_name)
+            *object_model_name.split(".", 1) if "." in object_model_name else ("dcim", object_model_name)
         )
         location = ct.get_object_for_this_type(pk=object_pk)
         if not isinstance(location, Location):
@@ -550,17 +556,16 @@ class RedeployDigitalTwinJob(Job):
         time_limit = 660
 
     location = ObjectVar(model=Location, description="Location with an active deployment to update.")
-    config_source = ChoiceVar(choices=CONFIG_SOURCE_CHOICES, default="empty_config",
-                              description="Config source for the redeployed nodes.")
+    config_source = ChoiceVar(
+        choices=CONFIG_SOURCE_CHOICES, default="empty_config", description="Config source for the redeployed nodes."
+    )
 
     def run(self, location, config_source, **kwargs):
         from nautobot_digital_twin.backends import get_backend
         from nautobot_digital_twin.models import DigitalTwinDeployment
 
         deployment = (
-            DigitalTwinDeployment.objects.filter(location=location, status="deployed")
-            .order_by("-deployed_at")
-            .first()
+            DigitalTwinDeployment.objects.filter(location=location, status="deployed").order_by("-deployed_at").first()
         )
         if not deployment:
             self.logger.failure(
@@ -675,22 +680,20 @@ class ValidateDigitalTwinConnectivityJob(Job):
         from nautobot_digital_twin.models import DigitalTwinDeployment
 
         deployment = (
-            DigitalTwinDeployment.objects.filter(location=location, status="deployed")
-            .order_by("-deployed_at")
-            .first()
+            DigitalTwinDeployment.objects.filter(location=location, status="deployed").order_by("-deployed_at").first()
         )
         if not deployment:
-            self.logger.failure(
-                "No active (deployed) digital twin found for '%s'. Deploy first.", location.name
-            )
+            self.logger.failure("No active (deployed) digital twin found for '%s'. Deploy first.", location.name)
             return
 
         # Derive lab name using the same algorithm as build_containerlab_yaml
         import re as _re
+
         lab_name = _re.sub(r"[^a-z0-9-]", "-", location.name.lower()).strip("-") or "lab"
 
         # Collect devices with a primary IPv4
         from nautobot.dcim.models import Device as _Device
+
         devices = list(_Device.objects.filter(location=location).select_related("primary_ip4"))
 
         testable = []
@@ -708,7 +711,10 @@ class ValidateDigitalTwinConnectivityJob(Job):
 
         self.logger.info(
             "Starting full-mesh ping test: %d device(s) with IPs at '%s' (lab: %s, pings: %s).",
-            len(testable), location.name, lab_name, ping_count,
+            len(testable),
+            location.name,
+            lab_name,
+            ping_count,
         )
 
         backend = get_backend(BACKEND_NAME)
@@ -726,15 +732,16 @@ class ValidateDigitalTwinConnectivityJob(Job):
                 except Exception as e:
                     self.logger.warning(
                         "FAIL  %s -> %s (%s): error executing ping: %s",
-                        src_dev.name, dst_dev.name, dst_ip, e,
+                        src_dev.name,
+                        dst_dev.name,
+                        dst_ip,
+                        e,
                     )
                     failed += 1
                     continue
 
                 if exit_status == 0:
-                    self.logger.info(
-                        "PASS  %s -> %s (%s)", src_dev.name, dst_dev.name, dst_ip
-                    )
+                    self.logger.info("PASS  %s -> %s (%s)", src_dev.name, dst_dev.name, dst_ip)
                     passed += 1
                 else:
                     # Extract loss line from ping output for a concise failure message
@@ -744,7 +751,10 @@ class ValidateDigitalTwinConnectivityJob(Job):
                     )
                     self.logger.warning(
                         "FAIL  %s -> %s (%s): %s",
-                        src_dev.name, dst_dev.name, dst_ip, loss_line,
+                        src_dev.name,
+                        dst_dev.name,
+                        dst_ip,
+                        loss_line,
                     )
                     failed += 1
 
@@ -758,7 +768,8 @@ class ValidateDigitalTwinConnectivityJob(Job):
         else:
             self.logger.failure(
                 "%d/%d ping test(s) failed. Check container status and IP reachability.",
-                failed, total,
+                failed,
+                total,
             )
 
 
@@ -804,7 +815,9 @@ class AutoDestroyExpiredDigitalTwinJob(Job):
                 if result is not None and result[0] != 0:
                     self.logger.warning(
                         "Destroy for '%s' returned exit status %s: %s",
-                        location.name, result[0], result[2] or result[1],
+                        location.name,
+                        result[0],
+                        result[2] or result[1],
                     )
             except Exception as e:
                 self.logger.warning("Destroy for '%s' failed: %s", location.name, e)

@@ -2,6 +2,7 @@
 Generate containerlab topology YAML from a Nautobot Location (devices + cables).
 Used when backend is containerlab: build YAML from site data, then upload to containerlab server.
 """
+
 import ipaddress
 import re
 import logging
@@ -193,7 +194,9 @@ def build_containerlab_yaml(location, device_startup_configs=None, device_filter
         qs = qs.filter(**device_filter)
     devices = list(qs.order_by("name"))
     if not devices:
-        logger.warning("No devices at location %s (filter: %s); generating empty topology", location.name, device_filter)
+        logger.warning(
+            "No devices at location %s (filter: %s); generating empty topology", location.name, device_filter
+        )
         return _empty_topology_yaml(location)
 
     name = re.sub(r"[^a-z0-9-]", "-", location.name.lower()).strip("-") or "lab"
@@ -221,9 +224,7 @@ def build_containerlab_yaml(location, device_startup_configs=None, device_filter
 
     device_ids = {dev.id for dev in devices}
     interface_ct = ContentType.objects.get_for_model(Interface)
-    interface_ids = list(
-        Interface.objects.filter(device__id__in=device_ids).values_list("pk", flat=True)
-    )
+    interface_ids = list(Interface.objects.filter(device__id__in=device_ids).values_list("pk", flat=True))
     links = []
     seen = set()
     if interface_ids:
@@ -285,9 +286,7 @@ def build_mermaid_topology(location):
     device_names = {dev.id: dev.name for dev in devices}
 
     interface_ct = ContentType.objects.get_for_model(Interface)
-    interface_ids = list(
-        Interface.objects.filter(device__location=location).values_list("pk", flat=True)
-    )
+    interface_ids = list(Interface.objects.filter(device__location=location).values_list("pk", flat=True))
     edges = {}
     if interface_ids:
         for cable in Cable.objects.filter(
@@ -333,6 +332,7 @@ def _empty_topology_yaml(location):
 def _render_yaml(name, nodes, links, mgmt_subnet=None):
     """Render containerlab topology dict to YAML string."""
     import yaml
+
     data = {
         "name": name,
         "topology": {

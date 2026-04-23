@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 
 from nautobot.apps.jobs import JobHookReceiver, register_jobs
 
+
 class DigitalTwinBackend(ABC):
     """Abstract interface for all digital twin backends."""
 
@@ -24,4 +25,3 @@ class DigitalTwinBackend(ABC):
     def destroy_site(self, site):
         """Tear down the digital twin for the given Site/Location."""
         raise NotImplementedError
-

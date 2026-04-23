@@ -18,18 +18,50 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="DigitalTwinDeployment",
             fields=[
-                ("id", models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False, unique=True)),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False, unique=True
+                    ),
+                ),
                 ("created", models.DateTimeField(auto_now_add=True, null=True)),
                 ("last_updated", models.DateTimeField(auto_now=True, null=True)),
-                ("_custom_field_data", models.JSONField(blank=True, default=dict, encoder=django.core.serializers.json.DjangoJSONEncoder)),
-                ("status", models.CharField(choices=[("deployed", "Deployed"), ("destroyed", "Destroyed")], max_length=32)),
+                (
+                    "_custom_field_data",
+                    models.JSONField(blank=True, default=dict, encoder=django.core.serializers.json.DjangoJSONEncoder),
+                ),
+                (
+                    "status",
+                    models.CharField(choices=[("deployed", "Deployed"), ("destroyed", "Destroyed")], max_length=32),
+                ),
                 ("backend", models.CharField(default="containerlab", max_length=64)),
                 ("deployed_at", models.DateTimeField()),
                 ("destroyed_at", models.DateTimeField(blank=True, null=True)),
-                ("auto_destroy_at", models.DateTimeField(blank=True, help_text="When to automatically destroy this deployment.", null=True)),
+                (
+                    "auto_destroy_at",
+                    models.DateTimeField(
+                        blank=True, help_text="When to automatically destroy this deployment.", null=True
+                    ),
+                ),
                 ("tags", nautobot.core.models.fields.TagsField(through="extras.TaggedItem", to="extras.Tag")),
-                ("deployed_by", models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name="digital_twin_deployments", to="users.user")),
-                ("location", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="digital_twin_deployments", to="dcim.location")),
+                (
+                    "deployed_by",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="digital_twin_deployments",
+                        to="users.user",
+                    ),
+                ),
+                (
+                    "location",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="digital_twin_deployments",
+                        to="dcim.location",
+                    ),
+                ),
             ],
             options={
                 "ordering": ["-deployed_at"],
@@ -39,6 +71,10 @@ class Migration(migrations.Migration):
         ),
         migrations.AddConstraint(
             model_name="digitaltwindeployment",
-            constraint=models.UniqueConstraint(condition=models.Q(("status", "deployed")), fields=("location",), name="unique_active_deployment_per_location"),
+            constraint=models.UniqueConstraint(
+                condition=models.Q(("status", "deployed")),
+                fields=("location",),
+                name="unique_active_deployment_per_location",
+            ),
         ),
     ]

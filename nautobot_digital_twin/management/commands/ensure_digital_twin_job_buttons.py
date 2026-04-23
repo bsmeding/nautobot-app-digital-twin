@@ -6,6 +6,7 @@ but this command can be used to force creation if needed.
 
 Run after Job records exist (i.e. after `nautobot-server post_upgrade`).
 """
+
 from django.core.management.base import BaseCommand
 from django.apps import apps
 

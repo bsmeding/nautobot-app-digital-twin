@@ -93,6 +93,7 @@ class DigitalTwinDeployment(PrimaryModel):
 
         return build_mermaid_topology(self.location)
 
+
 # If you want to choose a specific model to overload in your class declaration, please reference the following documentation:
 # how to chose a database model: https://docs.nautobot.com/projects/core/en/stable/plugins/development/#database-models
 # If you want to use the extras_features decorator please reference the following documentation

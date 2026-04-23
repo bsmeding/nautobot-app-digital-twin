@@ -27,6 +27,8 @@ class TestNautobotDigitalTwinExampleModel(ModelTestCases.BaseModelTestCase):
 
     def test_create_nautobotdigitaltwinexamplemodel_all_fields_success(self):
         """Create NautobotDigitalTwinExampleModel with all fields."""
-        nautobotdigitaltwinexamplemodel = models.NautobotDigitalTwinExampleModel.objects.create(name="Development", description="Development Test")
+        nautobotdigitaltwinexamplemodel = models.NautobotDigitalTwinExampleModel.objects.create(
+            name="Development", description="Development Test"
+        )
         self.assertEqual(nautobotdigitaltwinexamplemodel.name, "Development")
         self.assertEqual(nautobotdigitaltwinexamplemodel.description, "Development Test")

@@ -20,7 +20,9 @@ class NautobotDigitalTwinExampleModelForm(NautobotModelForm):  # pylint: disable
 class NautobotDigitalTwinExampleModelBulkEditForm(TagsBulkEditFormMixin, NautobotBulkEditForm):  # pylint: disable=too-many-ancestors
     """NautobotDigitalTwinExampleModel bulk edit form."""
 
-    pk = forms.ModelMultipleChoiceField(queryset=models.NautobotDigitalTwinExampleModel.objects.all(), widget=forms.MultipleHiddenInput)
+    pk = forms.ModelMultipleChoiceField(
+        queryset=models.NautobotDigitalTwinExampleModel.objects.all(), widget=forms.MultipleHiddenInput
+    )
     description = forms.CharField(required=False, max_length=CHARFIELD_MAX_LENGTH)
 
     class Meta:

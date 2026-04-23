@@ -83,7 +83,9 @@ def filter_config_replace(config_content: str, patterns: list) -> str:
     return result
 
 
-def filter_config_append_add_lines(config_content: str, platform_key: str, username: str, password: str, platform_add_config_lines: dict) -> str:
+def filter_config_append_add_lines(
+    config_content: str, platform_key: str, username: str, password: str, platform_add_config_lines: dict
+) -> str:
     """
     Append platform-specific config lines when configured (e.g. fallback auth).
 
@@ -131,7 +133,9 @@ def filter_config_append_add_lines(config_content: str, platform_key: str, usern
     return f"{content}\n!\n{block}\n" if content else block
 
 
-def build_minimal_config_from_add_lines(platform_key: str, username: str, password: str, platform_add_config_lines: dict) -> str:
+def build_minimal_config_from_add_lines(
+    platform_key: str, username: str, password: str, platform_add_config_lines: dict
+) -> str:
     """
     Build a minimal config containing only the PLATFORM_ADD_CONFIG_LINES for that platform.
 

@@ -24,7 +24,6 @@ def noop_reverse(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("nautobot_digital_twin", "0002_digital_twin_deployment"),
     ]

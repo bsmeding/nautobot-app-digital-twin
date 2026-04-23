@@ -100,7 +100,6 @@ def create_default_job_buttons(apps=global_apps):
     return created_count, skipped_no_job
 
 
-
 def post_migrate_create_job_buttons(sender, apps=global_apps, **kwargs):  # pylint: disable=unused-argument
     """
     Callback for nautobot_database_ready — create JobButton records.

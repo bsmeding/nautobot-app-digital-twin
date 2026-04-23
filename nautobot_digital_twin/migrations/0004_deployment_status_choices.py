@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("nautobot_digital_twin", "0003_digitaltwindeployment_name"),
     ]

@@ -1,6 +1,7 @@
 """
 Digital Twin plugin config helpers (no import of app package to avoid circular imports).
 """
+
 from django.apps import apps
 from django.conf import settings
 
