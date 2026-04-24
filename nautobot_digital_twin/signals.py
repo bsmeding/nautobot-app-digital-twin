@@ -22,7 +22,7 @@ _JOB_BUTTON_SPECS = [
         "confirmation": True,
     },
     {
-        "job_class_name": "CheckDigitalTwinHealthJob",
+        "job_class_name": "CheckDigitalTwinHealthJobButtonReceiver",
         "button_name": "Check Digital Twin Health",
         "text": "Check Health",
         "weight": 102,
@@ -30,7 +30,7 @@ _JOB_BUTTON_SPECS = [
         "confirmation": False,
     },
     {
-        "job_class_name": "ValidateDigitalTwinConnectivityJob",
+        "job_class_name": "ValidateDigitalTwinConnectivityJobButtonReceiver",
         "button_name": "Validate Digital Twin Connectivity",
         "text": "Ping Test",
         "weight": 103,
@@ -90,11 +90,19 @@ def create_default_job_buttons(apps=global_apps):
                 "confirmation": spec["confirmation"],
             },
         )
+        # Re-sync on every run so existing buttons pick up new JobButtonReceiver classes after upgrades.
+        jb.text = spec["text"]
+        jb.job = job_record
+        jb.weight = spec["weight"]
+        jb.group_name = "Nautobot Digital Twin"
+        jb.button_class = spec["button_class"]
+        jb.confirmation = spec["confirmation"]
+        jb.save()
+        jb.content_types.set([location_ct])
+        if hasattr(jb, "enabled"):
+            jb.enabled = True
+            jb.save(update_fields=["enabled"])
         if created:
-            jb.content_types.set([location_ct])
-            if hasattr(jb, "enabled"):
-                jb.enabled = True
-                jb.save(update_fields=["enabled"])
             created_count += 1
 
     return created_count, skipped_no_job

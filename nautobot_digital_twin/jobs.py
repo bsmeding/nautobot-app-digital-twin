@@ -65,6 +65,150 @@ def _mark_deployment_deployed(deployment):
     deployment.save(update_fields=["status"])
 
 
+def _resolve_location_from_job_button(object_pk, object_model_name):
+    """Resolve a Location from Job Button receiver arguments (object detail or list actions)."""
+    from django.contrib.contenttypes.models import ContentType
+
+    if "." in object_model_name:
+        app_label, model = object_model_name.split(".", 1)
+    else:
+        app_label, model = "dcim", object_model_name
+    ct = ContentType.objects.get_by_natural_key(app_label, model)
+    obj = ct.get_object_for_this_type(pk=object_pk)
+    if not isinstance(obj, Location):
+        raise ValueError(f"Expected Location, got {type(obj).__name__}")
+    return obj
+
+
+def _run_check_digital_twin_health(job, location):
+    """Shared implementation for manual health job and Job Button."""
+    from nautobot_digital_twin.backends import get_backend
+    from nautobot_digital_twin.models import DigitalTwinDeployment
+
+    deployment = (
+        DigitalTwinDeployment.objects.filter(location=location, status__in=_ACTIVE_STATUSES)
+        .order_by("-deployed_at")
+        .first()
+    )
+    if not deployment:
+        job.logger.warning("No active deployment found for '%s'.", location.name)
+        return
+
+    backend = get_backend(BACKEND_NAME)
+
+    ok, message = backend.check_health()
+    if not ok:
+        job.logger.failure("Containerlab server unreachable: %s", message)
+        return
+    job.logger.info("Server OK: %s", message)
+
+    exit_status, out, err = backend.get_topology_status(location)
+    if exit_status == 0:
+        job.logger.success("Topology for '%s' is running:\n%s", location.name, out.strip() or "(no output)")
+    else:
+        job.logger.failure(
+            "Could not inspect topology for '%s': %s",
+            location.name,
+            (err.strip() or out.strip()) or "(no output)",
+        )
+
+
+def _run_validate_digital_twin_connectivity(job, location, ping_count="3"):
+    """Shared implementation for manual ping job and Job Button."""
+    import re as _re
+
+    from nautobot.dcim.models import Device as _Device
+
+    from nautobot_digital_twin.backends import get_backend
+    from nautobot_digital_twin.models import DigitalTwinDeployment
+
+    deployment = (
+        DigitalTwinDeployment.objects.filter(location=location, status="deployed").order_by("-deployed_at").first()
+    )
+    if not deployment:
+        job.logger.failure("No active (deployed) digital twin found for '%s'. Deploy first.", location.name)
+        return
+
+    lab_name = _re.sub(r"[^a-z0-9-]", "-", location.name.lower()).strip("-") or "lab"
+
+    devices = list(_Device.objects.filter(location=location).select_related("primary_ip4"))
+
+    testable = []
+    for dev in devices:
+        if dev.primary_ip4:
+            ip_str = str(dev.primary_ip4.address.ip)
+            testable.append((dev, ip_str))
+
+    if not testable:
+        job.logger.warning(
+            "No devices with primary_ip4 at '%s'. Assign primary IPs in Nautobot to enable ping tests.",
+            location.name,
+        )
+        return
+
+    job.logger.info(
+        "Starting full-mesh ping test: %d device(s) with IPs at '%s' (lab: %s, pings: %s).",
+        len(testable),
+        location.name,
+        lab_name,
+        ping_count,
+    )
+
+    backend = get_backend(BACKEND_NAME)
+    passed = 0
+    failed = 0
+    count = int(ping_count)
+
+    for src_dev, _ in testable:
+        src_container = backend._container_name(lab_name, src_dev.name)
+        for dst_dev, dst_ip in testable:
+            if src_dev.pk == dst_dev.pk:
+                continue
+            try:
+                exit_status, out, err = backend.ping_from_container(src_container, dst_ip, count=count)
+            except Exception as e:
+                job.logger.warning(
+                    "FAIL  %s -> %s (%s): error executing ping: %s",
+                    src_dev.name,
+                    dst_dev.name,
+                    dst_ip,
+                    e,
+                )
+                failed += 1
+                continue
+
+            if exit_status == 0:
+                job.logger.info("PASS  %s -> %s (%s)", src_dev.name, dst_dev.name, dst_ip)
+                passed += 1
+            else:
+                loss_line = next(
+                    (ln.strip() for ln in (out + err).splitlines() if "packet loss" in ln.lower()),
+                    err.strip() or out.strip() or "no output",
+                )
+                job.logger.warning(
+                    "FAIL  %s -> %s (%s): %s",
+                    src_dev.name,
+                    dst_dev.name,
+                    dst_ip,
+                    loss_line,
+                )
+                failed += 1
+
+    total = passed + failed
+    if total == 0:
+        job.logger.warning("No ping tests were executed.")
+        return
+
+    if failed == 0:
+        job.logger.success("All %d ping test(s) passed.", total)
+    else:
+        job.logger.failure(
+            "%d/%d ping test(s) failed. Check container status and IP reachability.",
+            failed,
+            total,
+        )
+
+
 def _run_digital_twin_deploy(job, location, backend_name=None, config_source="empty_config"):
     """
     Shared deploy logic. Creates a DEPLOYING record first, then calls the backend.
@@ -258,14 +402,7 @@ class StartDigitalTwinJobButtonReceiver(JobButtonReceiver):
         time_limit = 660
 
     def run(self, object_pk, object_model_name, **kwargs):
-        from django.contrib.contenttypes.models import ContentType
-
-        ct = ContentType.objects.get_by_natural_key(
-            *object_model_name.split(".", 1) if "." in object_model_name else ("dcim", object_model_name)
-        )
-        location = ct.get_object_for_this_type(pk=object_pk)
-        if not isinstance(location, Location):
-            raise ValueError(f"Expected Location, got {type(location).__name__}")
+        location = _resolve_location_from_job_button(object_pk, object_model_name)
         config_source = (
             "intended_config" if "intended_config" in (c[0] for c in CONFIG_SOURCE_CHOICES) else "empty_config"
         )
@@ -299,14 +436,7 @@ class StopDigitalTwinJobButtonReceiver(JobButtonReceiver):
         time_limit = 360
 
     def run(self, object_pk, object_model_name, **kwargs):
-        from django.contrib.contenttypes.models import ContentType
-
-        ct = ContentType.objects.get_by_natural_key(
-            *object_model_name.split(".", 1) if "." in object_model_name else ("dcim", object_model_name)
-        )
-        location = ct.get_object_for_this_type(pk=object_pk)
-        if not isinstance(location, Location):
-            raise ValueError(f"Expected Location, got {type(location).__name__}")
+        location = _resolve_location_from_job_button(object_pk, object_model_name)
         _run_digital_twin_destroy(self, location)
 
 
@@ -618,35 +748,22 @@ class CheckDigitalTwinHealthJob(Job):
     location = ObjectVar(model=Location, description="Location to check.")
 
     def run(self, location, **kwargs):
-        from nautobot_digital_twin.backends import get_backend
-        from nautobot_digital_twin.models import DigitalTwinDeployment
+        _run_check_digital_twin_health(self, location)
 
-        deployment = (
-            DigitalTwinDeployment.objects.filter(location=location, status__in=_ACTIVE_STATUSES)
-            .order_by("-deployed_at")
-            .first()
-        )
-        if not deployment:
-            self.logger.warning("No active deployment found for '%s'.", location.name)
-            return
 
-        backend = get_backend(BACKEND_NAME)
+class CheckDigitalTwinHealthJobButtonReceiver(JobButtonReceiver):
+    """Run health check for the Location opened from a Job Button (detail or list)."""
 
-        ok, message = backend.check_health()
-        if not ok:
-            self.logger.failure("Containerlab server unreachable: %s", message)
-            return
-        self.logger.info("Server OK: %s", message)
+    class Meta:
+        name = "Check Digital Twin Health (Job Button)"
+        description = "SSH to containerlab and inspect the running topology for this Location."
+        commit_default = False
+        soft_time_limit = 120
+        time_limit = 150
 
-        exit_status, out, err = backend.get_topology_status(location)
-        if exit_status == 0:
-            self.logger.success("Topology for '%s' is running:\n%s", location.name, out.strip() or "(no output)")
-        else:
-            self.logger.failure(
-                "Could not inspect topology for '%s': %s",
-                location.name,
-                (err.strip() or out.strip()) or "(no output)",
-            )
+    def run(self, object_pk, object_model_name, **kwargs):
+        location = _resolve_location_from_job_button(object_pk, object_model_name)
+        _run_check_digital_twin_health(self, location)
 
 
 class ValidateDigitalTwinConnectivityJob(Job):
@@ -676,101 +793,25 @@ class ValidateDigitalTwinConnectivityJob(Job):
     )
 
     def run(self, location, ping_count="3", **kwargs):
-        from nautobot_digital_twin.backends import get_backend
-        from nautobot_digital_twin.models import DigitalTwinDeployment
+        _run_validate_digital_twin_connectivity(self, location, ping_count=ping_count)
 
-        deployment = (
-            DigitalTwinDeployment.objects.filter(location=location, status="deployed").order_by("-deployed_at").first()
+
+class ValidateDigitalTwinConnectivityJobButtonReceiver(JobButtonReceiver):
+    """Run ping connectivity test for the Location opened from a Job Button (detail or list)."""
+
+    class Meta:
+        name = "Validate Digital Twin Connectivity (Job Button)"
+        description = (
+            "Run a full-mesh ping test between all devices in an active digital twin. "
+            "Uses 3 ICMP packets per test (same as manual job default)."
         )
-        if not deployment:
-            self.logger.failure("No active (deployed) digital twin found for '%s'. Deploy first.", location.name)
-            return
+        commit_default = False
+        soft_time_limit = 600
+        time_limit = 660
 
-        # Derive lab name using the same algorithm as build_containerlab_yaml
-        import re as _re
-
-        lab_name = _re.sub(r"[^a-z0-9-]", "-", location.name.lower()).strip("-") or "lab"
-
-        # Collect devices with a primary IPv4
-        from nautobot.dcim.models import Device as _Device
-
-        devices = list(_Device.objects.filter(location=location).select_related("primary_ip4"))
-
-        testable = []
-        for dev in devices:
-            if dev.primary_ip4:
-                ip_str = str(dev.primary_ip4.address.ip)
-                testable.append((dev, ip_str))
-
-        if not testable:
-            self.logger.warning(
-                "No devices with primary_ip4 at '%s'. Assign primary IPs in Nautobot to enable ping tests.",
-                location.name,
-            )
-            return
-
-        self.logger.info(
-            "Starting full-mesh ping test: %d device(s) with IPs at '%s' (lab: %s, pings: %s).",
-            len(testable),
-            location.name,
-            lab_name,
-            ping_count,
-        )
-
-        backend = get_backend(BACKEND_NAME)
-        passed = 0
-        failed = 0
-        count = int(ping_count)
-
-        for src_dev, _ in testable:
-            src_container = backend._container_name(lab_name, src_dev.name)
-            for dst_dev, dst_ip in testable:
-                if src_dev.pk == dst_dev.pk:
-                    continue
-                try:
-                    exit_status, out, err = backend.ping_from_container(src_container, dst_ip, count=count)
-                except Exception as e:
-                    self.logger.warning(
-                        "FAIL  %s -> %s (%s): error executing ping: %s",
-                        src_dev.name,
-                        dst_dev.name,
-                        dst_ip,
-                        e,
-                    )
-                    failed += 1
-                    continue
-
-                if exit_status == 0:
-                    self.logger.info("PASS  %s -> %s (%s)", src_dev.name, dst_dev.name, dst_ip)
-                    passed += 1
-                else:
-                    # Extract loss line from ping output for a concise failure message
-                    loss_line = next(
-                        (ln.strip() for ln in (out + err).splitlines() if "packet loss" in ln.lower()),
-                        err.strip() or out.strip() or "no output",
-                    )
-                    self.logger.warning(
-                        "FAIL  %s -> %s (%s): %s",
-                        src_dev.name,
-                        dst_dev.name,
-                        dst_ip,
-                        loss_line,
-                    )
-                    failed += 1
-
-        total = passed + failed
-        if total == 0:
-            self.logger.warning("No ping tests were executed.")
-            return
-
-        if failed == 0:
-            self.logger.success("All %d ping test(s) passed.", total)
-        else:
-            self.logger.failure(
-                "%d/%d ping test(s) failed. Check container status and IP reachability.",
-                failed,
-                total,
-            )
+    def run(self, object_pk, object_model_name, **kwargs):
+        location = _resolve_location_from_job_button(object_pk, object_model_name)
+        _run_validate_digital_twin_connectivity(self, location, ping_count="3")
 
 
 class AutoDestroyExpiredDigitalTwinJob(Job):
@@ -838,7 +879,9 @@ jobs = [
     ExecuteAndSendIntendedConfigJobButtonReceiver,
     RedeployDigitalTwinJob,
     CheckDigitalTwinHealthJob,
+    CheckDigitalTwinHealthJobButtonReceiver,
     ValidateDigitalTwinConnectivityJob,
+    ValidateDigitalTwinConnectivityJobButtonReceiver,
     AutoDestroyExpiredDigitalTwinJob,
 ]
 register_jobs(*jobs)

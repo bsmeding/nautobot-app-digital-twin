@@ -1,8 +1,8 @@
 """
-Management command to create default Job Buttons for Location (Start/Stop Digital Twin).
+Management command to create or refresh Job Buttons for Location (Digital Twin actions).
 
-Normally this is handled automatically via `nautobot_database_ready` (see `signals.py`),
-but this command can be used to force creation if needed.
+Normally handled via `nautobot_database_ready` (see `signals.py`). Re-running updates each
+button's linked Job (e.g. after switching a button from a plain Job to a JobButtonReceiver).
 
 Run after Job records exist (i.e. after `nautobot-server post_upgrade`).
 """
@@ -14,7 +14,10 @@ from nautobot_digital_twin.signals import create_default_job_buttons
 
 
 class Command(BaseCommand):
-    help = "Create default Job Buttons (Start/Stop Digital Twin on Location). Run after: nautobot-server post_upgrade"
+    help = (
+        "Create or refresh Digital Twin Job Buttons on Location. "
+        "Run after: nautobot-server post_upgrade"
+    )
 
     def handle(self, *args, **options):
         created, skipped = create_default_job_buttons(apps=apps)
