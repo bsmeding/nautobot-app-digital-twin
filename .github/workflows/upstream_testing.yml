@@ -16,8 +16,6 @@ jobs:
             app_branch: "main"
           - nautobot_branch: "next"
             app_branch: "main"
-          - nautobot_branch: "ltm-2.4"
-            app_branch: "ltm-2.4"
     uses: "nautobot/nautobot/.github/workflows/plugin_upstream_testing_base.yml@develop"
     with:  # Below could potentially be collapsed into a single argument if a concrete relationship between both is enforced
       invoke_context_name: "NAUTOBOT_DIGITAL_TWIN"

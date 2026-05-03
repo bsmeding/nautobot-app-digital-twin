@@ -14,10 +14,7 @@ from nautobot_digital_twin.signals import create_default_job_buttons
 
 
 class Command(BaseCommand):
-    help = (
-        "Create or refresh Digital Twin Job Buttons on Location. "
-        "Run after: nautobot-server post_upgrade"
-    )
+    help = "Create or refresh Digital Twin Job Buttons on Location. Run after: nautobot-server post_upgrade"
 
     def handle(self, *args, **options):
         created, skipped = create_default_job_buttons(apps=apps)
