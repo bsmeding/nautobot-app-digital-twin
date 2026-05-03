@@ -1,6 +1,9 @@
 
 .temp
 .ruff-venv/
+.ruff_cache/
+.lint-venv/
+.tmp*
 
 # Ansible Retry Files
 *.retry

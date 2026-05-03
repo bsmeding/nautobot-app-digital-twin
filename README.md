@@ -65,10 +65,10 @@ See the full docs for all available options.
 
 ## Documentation
 
-- User Guide: [User Guide](https://netdevops.it/projects/nautobot-digital-twin/user-guide/)
-- Admin Guide: [Admin Guide](https://netdevops.it/projects/nautobot-digital-twin/admin-guide/)
-- Developer Guide: [Developer Guide](https://netdevops.it/projects/nautobot-digital-twin/developer-guide/)
-- Release Notes: [Release Notes](https://netdevops.it/projects/nautobot-digital-twin/release-notes/)
+- User Guide: [User Guide](https://netdevops.it/projects/nautobot-app-digital-twin/user-guide/)
+- Admin Guide: [Admin Guide](https://netdevops.it/projects/nautobot-app-digital-twin/admin-guide/)
+- Developer Guide: [Developer Guide](https://netdevops.it/projects/nautobot-app-digital-twin/developer-guide/)
+- Release Notes: [Release Notes](https://netdevops.it/projects/nautobot-app-digital-twin/release-notes/)
 
 ## Development
 

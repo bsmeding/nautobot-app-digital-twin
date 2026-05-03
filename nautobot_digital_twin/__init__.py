@@ -83,15 +83,18 @@ class NautobotDigitalTwinConfig(NautobotAppConfig):
         # When True (default), remove site folder (topology + config files) from backend on destroy.
         "DELETE_CONFIG_AFTER_DESTROY": True,
         # Platform-specific config for "Push intended config" job: where to copy config inside container
-        # and optional reload command. Dict: platform_key -> {"container_path": str, "reload_command": str}.
+        # and optional reload command/restart behavior.
+        # Dict: platform_key -> {"container_path": str, "reload_command": str, "restart_container": bool}.
         "PLATFORM_PUSH_CONFIG": {
             "arista_eos": {
                 "container_path": "/mnt/flash/startup-config",
                 "reload_command": "FastCli -p 15 -c 'configure replace flash:startup-config force'",
+                "restart_container": True,
             },
             "cisco_ios": {
                 "container_path": "/config/startup-config.cfg",
                 "reload_command": "",
+                "restart_container": False,
             },
         },
         # Maximum number of simultaneously active deployments per user (0 = unlimited).

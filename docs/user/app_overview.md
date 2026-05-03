@@ -19,7 +19,7 @@ The app generates **containerlab** topology artifacts from Nautobot objects and 
 
 ## Authors and Maintainers
 
-The app is maintained in the `bsmeding/nautobot-app-nautobot-app-digital-twin` repository. Use repository issues and pull requests for maintenance and contribution workflows.
+The app is maintained in the `bsmeding/nautobot-app-digital-twin` repository. Use repository issues and pull requests for maintenance and contribution workflows.
 
 ## Nautobot Features Used
 

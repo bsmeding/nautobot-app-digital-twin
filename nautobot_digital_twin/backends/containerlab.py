@@ -20,7 +20,11 @@ def _device_platform_key(device):
     """Return platform key for config lookups (e.g. 'arista_eos')."""
     platform = getattr(device, "platform", None)
     name = (platform.name if platform else "").lower()
-    return name.replace(" ", "_")
+    key = name.replace(" ", "_")
+    # Normalize common EOS aliases so plugin config can stay stable.
+    if key in {"eos", "arista-eos", "arista_eos"}:
+        return "arista_eos"
+    return key
 
 
 def _get_ssh_access_type():
@@ -299,6 +303,11 @@ class ContainerlabBackend(DigitalTwinBackend):
         cmd = f"docker exec {container_name} ping -c {count} -W {timeout_sec} {target_ip}"
         return self._run_remote(cmd, timeout=30)
 
+    def exec_in_container(self, container_name, command, timeout=30):
+        """Run arbitrary command inside a running container via docker exec."""
+        cmd = f"docker exec {container_name} {command}"
+        return self._run_remote(cmd, timeout=timeout)
+
     def deploy_site(self, site, job=None, config_source="empty_config"):
         """Deploy digital twin: generate topology, upload to server, run containerlab deploy."""
 
@@ -370,8 +379,9 @@ class ContainerlabBackend(DigitalTwinBackend):
         Push updated intended configs to an already running digital twin.
 
         Fetches intended configs from Golden Config, applies filters (REMOVE, REPLACE, ADD),
-        uploads to the containerlab host, then for each device: docker cp into container
-        and optionally runs a platform-specific reload command (from PLATFORM_PUSH_CONFIG).
+        uploads to the containerlab host, then reapplies the lab with:
+        containerlab deploy -t <topology> --reconfigure
+        so startup-config files are activated in a platform-agnostic way.
         """
 
         def log(msg, *args):
@@ -396,51 +406,24 @@ class ContainerlabBackend(DigitalTwinBackend):
             log("No intended configs to push.")
             return 0, "", ""
 
-        # 3. Lab name (must match topology)
-        lab_name = re.sub(r"[^a-z0-9-]", "-", site.name.lower()).strip("-") or "lab"
+        # 3. Regenerate and upload topology so nodes reference the new startup-config files.
+        log("Regenerating topology with intended startup-config references...")
+        yaml_content = build_containerlab_yaml(site, device_startup_configs=device_startup_configs)
+        self._upload_topology(site, yaml_content)
+
+        # 4. Reconfigure the full lab so new startup-config files are actually activated.
         subdir = self._remote_topology_subdir()
         topo_dir = f"~/{subdir}/{site.name}"
+        topo_file = f"{site.name}.clab.yaml"
+        reconfigure_cmd = f"cd {topo_dir} && containerlab deploy -t {topo_file} --reconfigure"
+        log("Reconfiguring containerlab topology to apply updated startup-configs: %s", reconfigure_cmd)
+        exit_status, out, err = self._run_remote(reconfigure_cmd)
+        if exit_status != 0:
+            log("Containerlab reconfigure failed for %s (exit %s): %s", site.name, exit_status, err or out)
+            return exit_status, out, err
 
-        cfg = get_plugin_config()
-        platform_push_config = cfg.get("PLATFORM_PUSH_CONFIG") or {}
-        devices = list(Device.objects.filter(location=site, name__in=device_startup_configs).order_by("name"))
-
-        for device in devices:
-            platform_key = _device_platform_key(device)
-            push_cfg = platform_push_config.get(platform_key) if isinstance(platform_push_config, dict) else None
-            if not push_cfg or not isinstance(push_cfg, dict):
-                log("No PLATFORM_PUSH_CONFIG for %s (platform %s); skipping.", device.name, platform_key)
-                continue
-
-            container_path = push_cfg.get("container_path", "").strip()
-            reload_cmd = (push_cfg.get("reload_command") or "").strip()
-            if not container_path:
-                log("No container_path for %s; skipping.", device.name)
-                continue
-
-            container_name = f"clab-{lab_name}-{device.name}"
-            filename = device_startup_configs[device.name]
-
-            # docker cp from host (in topo_dir) to container
-            copy_cmd = f"cd {topo_dir} && docker cp {filename} {container_name}:{container_path}"
-            log("Copying config for %s: %s", device.name, copy_cmd)
-            exit_status, out, err = self._run_remote(copy_cmd)
-            if exit_status != 0:
-                log("Failed to copy config for %s: %s", device.name, err or out)
-                return exit_status, out, err
-
-            if reload_cmd:
-                exec_cmd = f"docker exec {container_name} {reload_cmd}"
-                log("Running reload for %s: %s", device.name, exec_cmd)
-                exit_status, out, err = self._run_remote(exec_cmd)
-                if exit_status != 0:
-                    log("Reload command failed for %s (exit %s): %s", device.name, exit_status, err or out)
-                    # Non-fatal: config was copied, may apply on next boot
-                else:
-                    log("Reload completed for %s", device.name)
-
-        log("Push intended config completed for %s", site.name)
-        return 0, "", ""
+        log("Push intended config completed for %s (reconfigure successful).", site.name)
+        return 0, out, err
 
     def destroy_site(self, site):
         path = self._remote_topology_path(site)

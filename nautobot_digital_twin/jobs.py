@@ -80,6 +80,73 @@ def _resolve_location_from_job_button(object_pk, object_model_name):
     return obj
 
 
+def _sync_golden_config_repositories(job):
+    """Synchronize Git repositories used by Golden Config before intended generation."""
+    import time
+
+    from django.apps import apps
+
+    try:
+        GitRepository = apps.get_model("extras", "GitRepository")
+    except LookupError:
+        job.logger.warning("GitRepository model is not available; skipping Golden Config repository sync.")
+        return
+
+    repos_by_pk = {}
+
+    try:
+        GoldenConfigSetting = apps.get_model("nautobot_golden_config", "GoldenConfigSetting")
+    except LookupError:
+        GoldenConfigSetting = None
+
+    if GoldenConfigSetting is not None:
+        for settings_obj in GoldenConfigSetting.objects.all():
+            for repo_field in ("backup_repository", "intended_repository", "jinja_repository"):
+                repo = getattr(settings_obj, repo_field, None)
+                if repo is not None:
+                    repos_by_pk[repo.pk] = repo
+
+    # Config contexts are not Golden Config setting fields, but templates often depend on them.
+    for repo in GitRepository.objects.all():
+        provided_contents = getattr(repo, "provided_contents", None) or []
+        if any("configcontext" in str(content).lower() for content in provided_contents):
+            repos_by_pk[repo.pk] = repo
+
+    if not repos_by_pk:
+        job.logger.warning("No Golden Config Git repositories found to sync.")
+        return
+
+    user = _get_job_user(job)
+    for repo in repos_by_pk.values():
+        if not hasattr(repo, "sync"):
+            job.logger.warning("Git repository '%s' does not support direct sync; skipping.", repo.name)
+            continue
+        job.logger.info("Syncing Git repository '%s' before intended config generation...", repo.name)
+        sync_result = repo.sync(user=user, dry_run=False)
+        job.logger.info("Git repository '%s' sync enqueued (JobResult %s).", repo.name, sync_result.pk)
+
+        poll_interval = 5
+        max_wait = 300
+        elapsed = 0
+        while elapsed < max_wait:
+            sync_result.refresh_from_db()
+            status = getattr(sync_result, "status", None)
+            if status is not None and hasattr(status, "name"):
+                status = status.name
+            status_str = str(status or "").upper()
+            if status_str in ("COMPLETED", "SUCCESS"):
+                job.logger.info("Git repository '%s' sync completed successfully.", repo.name)
+                break
+            if status_str in ("FAILED", "ERROR", "FAILURE"):
+                job.logger.failure("Git repository '%s' sync failed. Check JobResult %s.", repo.name, sync_result.pk)
+                raise RuntimeError(f"Git repository '{repo.name}' sync failed")
+            time.sleep(poll_interval)
+            elapsed += poll_interval
+        else:
+            job.logger.failure("Git repository '%s' sync timed out after %s seconds.", repo.name, max_wait)
+            raise TimeoutError(f"Git repository '{repo.name}' sync timed out")
+
+
 def _run_check_digital_twin_health(job, location):
     """Shared implementation for manual health job and Job Button."""
     from nautobot_digital_twin.backends import get_backend
@@ -409,6 +476,37 @@ class StartDigitalTwinJobButtonReceiver(JobButtonReceiver):
         _run_digital_twin_deploy(self, location, config_source=config_source)
 
 
+class StartDigitalTwinEmptyConfigJob(Job):
+    """Start a digital twin with empty startup config, ignoring intended configs."""
+
+    class Meta:
+        name = "Start Digital Twin Empty Config (manual)"
+        description = "Deploy a digital twin for the selected Location without intended startup configs."
+        commit_default = True
+        soft_time_limit = 600
+        time_limit = 660
+
+    location = ObjectVar(model=Location, description="Location to deploy with empty config.")
+
+    def run(self, location, **kwargs):
+        _run_digital_twin_deploy(self, location, backend_name=BACKEND_NAME, config_source="empty_config")
+
+
+class StartDigitalTwinEmptyConfigJobButtonReceiver(JobButtonReceiver):
+    """Start digital twin with empty startup config from a Location Job Button."""
+
+    class Meta:
+        name = "Start Digital Twin Empty Config (Job Button)"
+        description = "Deploy a digital twin for this Location without intended startup configs."
+        commit_default = True
+        soft_time_limit = 600
+        time_limit = 660
+
+    def run(self, object_pk, object_model_name, **kwargs):
+        location = _resolve_location_from_job_button(object_pk, object_model_name)
+        _run_digital_twin_deploy(self, location, config_source="empty_config")
+
+
 class StopDigitalTwinJob(Job):
     """Stop the digital twin for a chosen Location (manual run)."""
 
@@ -459,8 +557,11 @@ def _run_execute_and_send_intended_config(job, location, backend_name=None):
 
     backend_name = BACKEND_NAME
 
-    # 1. Run Golden Config IntendedJob
-    job.logger.info("Step 1: Running Golden Config 'Generate Intended Configurations' job...")
+    # 1. Sync repositories and run Golden Config IntendedJob.
+    job.logger.info("Step 1: Syncing Golden Config Git repositories...")
+    _sync_golden_config_repositories(job)
+
+    job.logger.info("Step 2: Running Golden Config 'Generate Intended Configurations' job...")
     try:
         from nautobot.extras.models import JobResult
 
@@ -493,7 +594,10 @@ def _run_execute_and_send_intended_config(job, location, backend_name=None):
         child_result = JobResult.enqueue_job(
             job_model=intended_job,
             user=user,
-            job_kwargs={},
+            job_kwargs={
+                "fail_job_on_task_failure": True,
+                "commit_message": f"Digital Twin intended config generation for {location.name}",
+            },
         )
         job.logger.info("Intended job enqueued (JobResult %s). Waiting for completion...", child_result.pk)
 
@@ -527,8 +631,8 @@ def _run_execute_and_send_intended_config(job, location, backend_name=None):
         job.logger.failure("Golden Config intended generation failed: %s", e)
         raise
 
-    # 2 & 3. Push intended configs to backend and reactivate
-    job.logger.info("Step 2: Pushing intended configs to digital twin and reactivating...")
+    # 3. Push intended configs to backend and reactivate.
+    job.logger.info("Step 3: Pushing intended configs to digital twin and reactivating...")
     backend = get_backend(backend_name)
     if not hasattr(backend, "push_intended_config"):
         job.logger.failure("Backend '%s' does not support push intended config.", backend_name)
@@ -871,6 +975,8 @@ class AutoDestroyExpiredDigitalTwinJob(Job):
 jobs = [
     StartDigitalTwinJob,
     StartDigitalTwinJobButtonReceiver,
+    StartDigitalTwinEmptyConfigJob,
+    StartDigitalTwinEmptyConfigJobButtonReceiver,
     StopDigitalTwinJob,
     StopDigitalTwinJobButtonReceiver,
     PushIntendedConfigJob,
