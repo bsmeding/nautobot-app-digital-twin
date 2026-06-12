@@ -58,7 +58,7 @@ tomli = { version = "*", markers = "python_version < '3.11'" }  # tomli is inclu
 # Render custom markdown for version added/changed/remove notes
 markdown-version-annotations = "1.0.1"
 # Rendering docs to HTML
-mkdocs = "1.6.0"
+mkdocs = "1.6.1"
 # Material for MkDocs theme
 mkdocs-material = "9.5.32"
 # Automatic documentation from sources, for MkDocs
