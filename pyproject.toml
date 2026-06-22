@@ -64,7 +64,7 @@ mkdocs-material = "9.7.6"
 # Automatic documentation from sources, for MkDocs
 mkdocstrings = "0.25.2"
 mkdocstrings-python = "1.19.0"
-mkdocs-autorefs = "1.2.0"
+mkdocs-autorefs = "1.4.4"
 griffe = "1.15.0"
 
 [tool.poetry.extras]
