@@ -27,7 +27,7 @@ jobs:
       - name: "Regenerate poetry.lock"
         run: "poetry lock --regenerate"
       - name: "Upload poetry.lock"
-        uses: "actions/upload-artifact@v4"
+        uses: "actions/upload-artifact@v7"
         with:
           name: "poetry-lock"
           path: "poetry.lock"
@@ -308,7 +308,7 @@ jobs:
         if: >
           contains(fromJson('["develop","ltm-1.6"]'), github.base_ref) &&
           (github.head_ref != 'main') && (!startsWith(github.head_ref, 'release'))
-        uses: "actions/upload-artifact@v4"
+        uses: "actions/upload-artifact@v7"
         with:
           name: "python-coverage-comment-action"
           path: "python-coverage-comment-action.txt"
