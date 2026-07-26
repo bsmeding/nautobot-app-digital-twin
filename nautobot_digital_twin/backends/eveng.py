@@ -42,8 +42,7 @@ class EveNGBackend(DigitalTwinBackend):
         base_url = (self.backend_url or cfg.get("EVE_NG_URL") or "").rstrip("/")
         if not base_url:
             raise ValueError(
-                "EVE-NG backend requires EVE_NG_URL or BACKEND_URLS['eve-ng'] "
-                "(e.g. https://eve.example.com)."
+                "EVE-NG backend requires EVE_NG_URL or BACKEND_URLS['eve-ng'] (e.g. https://eve.example.com)."
             )
         user = cfg.get("EVE_NG_USER", "admin")
         password = cfg.get("EVE_NG_PASSWORD", "eve")
@@ -123,8 +122,7 @@ class EveNGBackend(DigitalTwinBackend):
             data = {"message": resp.text, "status": "fail"}
         if resp.status_code >= 400:
             raise RuntimeError(
-                f"EVE-NG API {method.upper()} {path} failed ({resp.status_code}): "
-                f"{data.get('message') or data}"
+                f"EVE-NG API {method.upper()} {path} failed ({resp.status_code}): {data.get('message') or data}"
             )
         if isinstance(data, dict) and data.get("status") == "fail":
             raise RuntimeError(f"EVE-NG API {method.upper()} {path} failed: {data.get('message') or data}")
@@ -271,10 +269,12 @@ class EveNGBackend(DigitalTwinBackend):
             return
 
         a_ifaces = (
-            self._api(session, base_url, "GET", f"api/labs{lab_path}/nodes/{a_id}/interfaces", timeout).get("data") or {}
+            self._api(session, base_url, "GET", f"api/labs{lab_path}/nodes/{a_id}/interfaces", timeout).get("data")
+            or {}
         )
         z_ifaces = (
-            self._api(session, base_url, "GET", f"api/labs{lab_path}/nodes/{z_id}/interfaces", timeout).get("data") or {}
+            self._api(session, base_url, "GET", f"api/labs{lab_path}/nodes/{z_id}/interfaces", timeout).get("data")
+            or {}
         )
         a_eth = a_ifaces.get("ethernet") or []
         z_eth = z_ifaces.get("ethernet") or []
