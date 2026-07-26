@@ -9,7 +9,12 @@ This document provides an overview of the App including critical information and
 
 Nautobot Digital Twin lets operators instantiate lab environments directly from Nautobot data so topologies can be validated, tested, and iterated safely.
 
-The app generates **containerlab** topology artifacts from Nautobot objects and orchestrates lab lifecycle operations (start/stop, config push, cleanup) through Nautobot jobs.
+The app generates topology artifacts from Nautobot objects and orchestrates lab lifecycle operations (start/stop, config push, cleanup) through Nautobot jobs.
+
+Supported backends:
+
+- **containerlab** — SSH orchestration of containerlab topologies (full feature set).
+- **eve-ng** — EVE-NG REST API lab create/start/stop/delete (beta).
 
 ## Audience (User Personas) - Who should use this App?
 

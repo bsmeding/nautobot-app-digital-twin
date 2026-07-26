@@ -1,0 +1,4 @@
+---
+Declared paramiko and requests as runtime dependencies.
+---
+dependencies

@@ -1,0 +1,4 @@
+---
+Backend registry now selects containerlab or eve-ng from BACKEND config.
+---
+changed

@@ -16,8 +16,12 @@ CONFIG_SOURCE_CHOICES = _get_config_source_choices()
 
 _ACTIVE_STATUSES = ["deploying", "deployed", "destroying"]
 
-# Only Containerlab is supported as a deployment backend.
-BACKEND_NAME = "containerlab"
+
+def _configured_backend_name():
+    """Return the plugin-configured backend name (containerlab or eve-ng)."""
+    from nautobot_digital_twin.backends import get_configured_backend_name
+
+    return get_configured_backend_name()
 
 
 # ---------------------------------------------------------------------------
@@ -161,13 +165,14 @@ def _run_check_digital_twin_health(job, location):
         job.logger.warning("No active deployment found for '%s'.", location.name)
         return
 
-    backend = get_backend(BACKEND_NAME)
+    backend_name = deployment.backend or _configured_backend_name()
+    backend = get_backend(backend_name)
 
     ok, message = backend.check_health()
     if not ok:
-        job.logger.failure("Containerlab server unreachable: %s", message)
+        job.logger.failure("Digital twin backend '%s' unreachable: %s", backend_name, message)
         return
-    job.logger.info("Server OK: %s", message)
+    job.logger.info("Backend '%s' OK: %s", backend_name, message)
 
     exit_status, out, err = backend.get_topology_status(location)
     if exit_status == 0:
@@ -196,6 +201,15 @@ def _run_validate_digital_twin_connectivity(job, location, ping_count="3"):
         job.logger.failure("No active (deployed) digital twin found for '%s'. Deploy first.", location.name)
         return
 
+    backend_name = deployment.backend or _configured_backend_name()
+    backend = get_backend(backend_name)
+    if not getattr(backend, "supports_connectivity_tests", False):
+        job.logger.failure(
+            "Backend '%s' does not support connectivity tests (currently containerlab only).",
+            backend_name,
+        )
+        return
+
     lab_name = _re.sub(r"[^a-z0-9-]", "-", location.name.lower()).strip("-") or "lab"
 
     devices = list(_Device.objects.filter(location=location).select_related("primary_ip4"))
@@ -221,18 +235,17 @@ def _run_validate_digital_twin_connectivity(job, location, ping_count="3"):
         ping_count,
     )
 
-    backend = get_backend(BACKEND_NAME)
     passed = 0
     failed = 0
     count = int(ping_count)
 
     for src_dev, _ in testable:
-        src_container = backend._container_name(lab_name, src_dev.name)
+        src_node = backend._container_name(lab_name, src_dev.name)
         for dst_dev, dst_ip in testable:
             if src_dev.pk == dst_dev.pk:
                 continue
             try:
-                exit_status, out, err = backend.ping_from_container(src_container, dst_ip, count=count)
+                exit_status, out, err = backend.ping_from_node(src_node, dst_ip, count=count)
             except Exception as e:
                 job.logger.warning(
                     "FAIL  %s -> %s (%s): error executing ping: %s",
@@ -321,7 +334,7 @@ def _run_digital_twin_deploy(job, location, backend_name=None, config_source="em
                 )
                 return
 
-    backend_name = BACKEND_NAME
+    backend_name = backend_name or _configured_backend_name()
     job.logger.info("Using backend: %s", backend_name)
 
     deployment = _create_deploying_record(job, location, backend_name)
@@ -352,8 +365,8 @@ def _run_digital_twin_deploy(job, location, backend_name=None, config_source="em
         job.logger.failure("Remote command failed (exit %s). stderr: %s", exit_status, err.strip() if err else "(none)")
         if err and "no such file or directory" in err.lower():
             job.logger.warning(
-                "Ensure the topology file exists on the containerlab server at "
-                "~/<CONTAINERLAB_REMOTE_TOPOLOGY_DIR>/<site>/<site>.clab.yaml."
+                "Ensure the topology/lab exists on the backend host "
+                "(containerlab: ~/<CONTAINERLAB_REMOTE_TOPOLOGY_DIR>/<site>/<site>.clab.yaml)."
             )
         deployment.status = "failed"
         deployment.save(update_fields=["status"])
@@ -393,11 +406,11 @@ def _run_digital_twin_destroy(job, location, backend_name=None, mark_destroyed_e
                 )
                 return
 
-    backend_name = BACKEND_NAME
+    backend_name = backend_name or deployment.backend or _configured_backend_name()
 
     deployment.status = "destroying"
     deployment.save(update_fields=["status"])
-    job.logger.info("Set deployment status to 'destroying'.")
+    job.logger.info("Set deployment status to 'destroying' (backend: %s).", backend_name)
 
     try:
         backend = get_backend(backend_name)
@@ -455,7 +468,7 @@ class StartDigitalTwinJob(Job):
     )
 
     def run(self, location, config_source, **kwargs):
-        _run_digital_twin_deploy(self, location, backend_name=BACKEND_NAME, config_source=config_source)
+        _run_digital_twin_deploy(self, location, backend_name=_configured_backend_name(), config_source=config_source)
 
 
 class StartDigitalTwinJobButtonReceiver(JobButtonReceiver):
@@ -489,7 +502,7 @@ class StartDigitalTwinEmptyConfigJob(Job):
     location = ObjectVar(model=Location, description="Location to deploy with empty config.")
 
     def run(self, location, **kwargs):
-        _run_digital_twin_deploy(self, location, backend_name=BACKEND_NAME, config_source="empty_config")
+        _run_digital_twin_deploy(self, location, backend_name=_configured_backend_name(), config_source="empty_config")
 
 
 class StartDigitalTwinEmptyConfigJobButtonReceiver(JobButtonReceiver):
@@ -520,7 +533,7 @@ class StopDigitalTwinJob(Job):
     location = ObjectVar(model=Location, description="Location to stop.")
 
     def run(self, location, **kwargs):
-        _run_digital_twin_destroy(self, location, backend_name=BACKEND_NAME)
+        _run_digital_twin_destroy(self, location, backend_name=_configured_backend_name())
 
 
 class StopDigitalTwinJobButtonReceiver(JobButtonReceiver):
@@ -555,7 +568,7 @@ def _run_execute_and_send_intended_config(job, location, backend_name=None):
         job.logger.failure("Golden Config plugin is not installed; cannot execute and send intended config.")
         return
 
-    backend_name = BACKEND_NAME
+    backend_name = backend_name or _configured_backend_name()
 
     # 1. Sync repositories and run Golden Config IntendedJob.
     job.logger.info("Step 1: Syncing Golden Config Git repositories...")
@@ -634,7 +647,7 @@ def _run_execute_and_send_intended_config(job, location, backend_name=None):
     # 3. Push intended configs to backend and reactivate.
     job.logger.info("Step 3: Pushing intended configs to digital twin and reactivating...")
     backend = get_backend(backend_name)
-    if not hasattr(backend, "push_intended_config"):
+    if not getattr(backend, "supports_intended_config", False):
         job.logger.failure("Backend '%s' does not support push intended config.", backend_name)
         return
 
@@ -662,10 +675,10 @@ def _run_push_intended_config(job, location, backend_name=None):
         job.logger.failure("Golden Config plugin is not installed; cannot push intended config.")
         return
 
-    backend_name = BACKEND_NAME
+    backend_name = backend_name or _configured_backend_name()
 
     backend = get_backend(backend_name)
-    if not hasattr(backend, "push_intended_config"):
+    if not getattr(backend, "supports_intended_config", False):
         job.logger.failure("Backend '%s' does not support push intended config.", backend_name)
         return
 
@@ -698,7 +711,7 @@ class PushIntendedConfigJob(Job):
     )
 
     def run(self, location, **kwargs):
-        _run_push_intended_config(self, location, backend_name=BACKEND_NAME)
+        _run_push_intended_config(self, location, backend_name=_configured_backend_name())
 
 
 class PushIntendedConfigJobButtonReceiver(JobButtonReceiver):
@@ -743,7 +756,7 @@ class ExecuteAndSendIntendedConfigJob(Job):
     )
 
     def run(self, location, **kwargs):
-        _run_execute_and_send_intended_config(self, location, backend_name=BACKEND_NAME)
+        _run_execute_and_send_intended_config(self, location, backend_name=_configured_backend_name())
 
 
 class ExecuteAndSendIntendedConfigJobButtonReceiver(JobButtonReceiver):
@@ -774,7 +787,7 @@ class ExecuteAndSendIntendedConfigJobButtonReceiver(JobButtonReceiver):
 
 class RedeployDigitalTwinJob(Job):
     """
-    Re-run containerlab deploy for an existing active deployment.
+    Re-run deploy for an existing active deployment.
     Re-reads Nautobot DCIM data and regenerates the topology; useful after adding/removing devices.
     Does NOT create a new deployment record — it updates the existing one's deployed_at timestamp.
     """
@@ -782,7 +795,7 @@ class RedeployDigitalTwinJob(Job):
     class Meta:
         name = "Redeploy Digital Twin (update existing)"
         description = (
-            "Regenerate topology and re-run containerlab deploy --reconfigure for an active deployment. "
+            "Regenerate topology and re-deploy an active digital twin. "
             "Use after adding/removing devices or cables in Nautobot."
         )
         commit_default = True
@@ -808,9 +821,10 @@ class RedeployDigitalTwinJob(Job):
             )
             return
 
-        self.logger.info("Redeploying digital twin for '%s' (backend: %s).", location.name, BACKEND_NAME)
+        backend_name = deployment.backend or _configured_backend_name()
+        self.logger.info("Redeploying digital twin for '%s' (backend: %s).", location.name, backend_name)
         try:
-            backend = get_backend(BACKEND_NAME)
+            backend = get_backend(backend_name)
             result = backend.deploy_site(location, job=self, config_source=config_source)
         except Exception as e:
             self.logger.failure("Redeploy failed: %s", e)
@@ -838,13 +852,12 @@ class RedeployDigitalTwinJob(Job):
 
 class CheckDigitalTwinHealthJob(Job):
     """
-    Check whether a deployed digital twin is actually running on the containerlab server.
-    Runs 'containerlab inspect' and reports node states.
+    Check whether a deployed digital twin is actually running on the configured backend.
     """
 
     class Meta:
         name = "Check Digital Twin Health"
-        description = "SSH to containerlab and inspect the running topology for this Location."
+        description = "Inspect the running topology for this Location on the configured backend."
         commit_default = False
         soft_time_limit = 120
         time_limit = 150
@@ -860,7 +873,7 @@ class CheckDigitalTwinHealthJobButtonReceiver(JobButtonReceiver):
 
     class Meta:
         name = "Check Digital Twin Health (Job Button)"
-        description = "SSH to containerlab and inspect the running topology for this Location."
+        description = "Inspect the running topology for this Location on the configured backend."
         commit_default = False
         soft_time_limit = 120
         time_limit = 150
@@ -949,13 +962,17 @@ class AutoDestroyExpiredDigitalTwinJob(Job):
             self.logger.info("No expired deployments to destroy.")
             return
         self.logger.info("Destroying %s expired deployment(s).", count)
-        backend = get_backend(BACKEND_NAME)
         for deployment in qs:
             location = deployment.location
+            backend_name = deployment.backend or _configured_backend_name()
             self.logger.info(
-                "Auto-destroying '%s' (auto_destroy_at was %s).", location.name, deployment.auto_destroy_at
+                "Auto-destroying '%s' via %s (auto_destroy_at was %s).",
+                location.name,
+                backend_name,
+                deployment.auto_destroy_at,
             )
             try:
+                backend = get_backend(backend_name)
                 result = backend.destroy_site(location)
                 if result is not None and result[0] != 0:
                     self.logger.warning(

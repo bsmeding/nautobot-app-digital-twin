@@ -4,20 +4,52 @@
   "properties": {
     "BACKEND": {
       "type": "string",
+      "enum": ["containerlab", "eve-ng", "eveng"],
       "default": "containerlab",
-      "description": "Digital twin backend; only \"containerlab\" is supported."
+      "description": "Digital twin backend: containerlab (SSH) or eve-ng (REST API)."
     },
     "BACKEND_URLS": {
       "type": "object",
       "additionalProperties": { "type": "string" },
       "default": {},
-      "description": "URL per backend name when the backend runs on a separate host."
+      "description": "Optional URL per backend name (e.g. BACKEND_URLS['eve-ng'])."
     },
     "LOCATION_TYPE_NAME": {
       "type": "string",
       "default": "Site",
       "description": "Location type name where the Digital Twin button is shown (Nautobot 2+: no slug)."
+    },
+    "EVE_NG_URL": {
+      "type": "string",
+      "default": "",
+      "description": "Base URL of the EVE-NG server (https://eve.example.com)."
+    },
+    "EVE_NG_USER": {
+      "type": "string",
+      "default": "admin",
+      "description": "EVE-NG API username."
+    },
+    "EVE_NG_PASSWORD": {
+      "type": "string",
+      "default": "eve",
+      "description": "EVE-NG API password."
+    },
+    "EVE_NG_LAB_FOLDER": {
+      "type": "string",
+      "default": "/nautobot",
+      "description": "Folder on EVE-NG where Nautobot labs are created."
+    },
+    "EVE_NG_VERIFY_SSL": {
+      "type": "boolean",
+      "default": false,
+      "description": "Verify TLS certificates when talking to EVE-NG."
+    },
+    "EVE_NG_PLATFORM_MAP": {
+      "type": "object",
+      "additionalProperties": true,
+      "default": {},
+      "description": "Map Nautobot platform names to EVE-NG node specs (template/type/image/...)."
     }
   },
-  "additionalProperties": false
+  "additionalProperties": true
 }

@@ -2,7 +2,12 @@
 
 This document describes external dependencies and prerequisites for this App to operate, including system requirements, API endpoints, interconnection or integrations to other applications or services, and similar topics.
 
-This app orchestrates a **containerlab** host over SSH (topology deploy/destroy) and optional integrations such as Golden Config.
+This app orchestrates lab backends and optional integrations such as Golden Config.
+
+Supported backends:
+
+- **containerlab** — SSH to a lab host (topology deploy/destroy, intended-config push, ping tests).
+- **eve-ng** — HTTPS REST API to an EVE-NG Community/Pro server (lab deploy/destroy/health; beta).
 
 ## External System Integrations
 

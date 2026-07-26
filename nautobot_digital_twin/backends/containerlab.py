@@ -40,6 +40,10 @@ def _get_ssh_access_type():
 class ContainerlabBackend(DigitalTwinBackend):
     """Containerlab backend; uses BACKEND_URLS['containerlab'] when set."""
 
+    name = "containerlab"
+    supports_intended_config = True
+    supports_connectivity_tests = True
+
     def get_connection_params(self):
         """Return (host, port, user, password, key_path) from plugin config or Secrets Group."""
         cfg = get_plugin_config()
@@ -302,6 +306,10 @@ class ContainerlabBackend(DigitalTwinBackend):
         """
         cmd = f"docker exec {container_name} ping -c {count} -W {timeout_sec} {target_ip}"
         return self._run_remote(cmd, timeout=30)
+
+    def ping_from_node(self, node_name, target_ip, count=3, timeout_sec=2):
+        """Ping from a containerlab node; node_name is the Docker container name."""
+        return self.ping_from_container(node_name, target_ip, count=count, timeout_sec=timeout_sec)
 
     def exec_in_container(self, container_name, command, timeout=30):
         """Run arbitrary command inside a running container via docker exec."""

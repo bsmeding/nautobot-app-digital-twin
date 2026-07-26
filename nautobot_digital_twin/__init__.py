@@ -47,6 +47,19 @@ class NautobotDigitalTwinConfig(NautobotAppConfig):
         # Optional: name of a Nautobot Secrets Group for SSH credentials (access type SSH, secret types Username/Password).
         # When set, overrides CONTAINERLAB_SSH_USER and CONTAINERLAB_SSH_PASSWORD.
         "CONTAINERLAB_SSH_CREDENTIALS_SECRETS_GROUP": "",
+        # --- EVE-NG backend ---
+        # Base URL of the EVE-NG web UI / API (e.g. "https://eve.example.com"). Also accepted via BACKEND_URLS["eve-ng"].
+        "EVE_NG_URL": "",
+        "EVE_NG_USER": "admin",
+        "EVE_NG_PASSWORD": "eve",
+        # Optional Secrets Group (access type Generic, Username/Password) overriding EVE_NG_USER/PASSWORD.
+        "EVE_NG_CREDENTIALS_SECRETS_GROUP": "",
+        # Lab folder on the EVE-NG server where Nautobot-created labs are stored.
+        "EVE_NG_LAB_FOLDER": "/nautobot",
+        "EVE_NG_VERIFY_SSL": False,
+        "EVE_NG_REQUEST_TIMEOUT": 60,
+        # Map Nautobot platform name -> EVE node spec: {"template": "veos", "type": "qemu", "image": "...", ...}
+        "EVE_NG_PLATFORM_MAP": {},
         # Optional: name of a Nautobot Secrets Group for digital twin fallback auth (access type Generic, Username/Password).
         # Used when appending platform-specific fallback auth to intended configs.
         # Optional: Secrets Group (access type Generic, Username/Password) for {username}/{password} in PLATFORM_ADD_CONFIG_LINES.
