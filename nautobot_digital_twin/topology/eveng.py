@@ -10,10 +10,10 @@ import logging
 import re
 from typing import Any
 
-from django.contrib.contenttypes.models import ContentType
-from nautobot.dcim.models import Cable, Device, Interface
+from nautobot.dcim.models import Device
 
 from nautobot_digital_twin.plugin_config import get_plugin_config
+from nautobot_digital_twin.topology.cables import iter_interface_cable_pairs
 
 logger = logging.getLogger(__name__)
 
@@ -202,37 +202,22 @@ def build_eveng_lab_plan(location, device_filter=None) -> dict[str, Any]:
         nodes.append({"device_name": device.name, "spec": spec})
 
     device_ids = {d.pk for d in devices}
-    interface_ct = ContentType.objects.get_for_model(Interface)
-    interface_ids = list(Interface.objects.filter(device__id__in=device_ids).values_list("pk", flat=True))
-
     links = []
     seen = set()
-    if interface_ids:
-        for cable in Cable.objects.filter(
-            termination_a_type=interface_ct,
-            termination_a_id__in=interface_ids,
-            termination_b_type=interface_ct,
-            termination_b_id__in=interface_ids,
-        ):
-            a = getattr(cable, "termination_a", None)
-            b = getattr(cable, "termination_b", None)
-            if a is None or b is None or not isinstance(a, Interface) or not isinstance(b, Interface):
-                continue
-            if a.device_id not in device_ids or b.device_id not in device_ids:
-                continue
-            key = tuple(sorted([(a.device.name, a.name), (b.device.name, b.name)]))
-            if key in seen:
-                continue
-            seen.add(key)
-            links.append(
-                {
-                    "name": f"link_{a.device.name}_{b.device.name}_{len(links) + 1}",
-                    "a_device": a.device.name,
-                    "a_iface": a.name,
-                    "z_device": b.device.name,
-                    "z_iface": b.name,
-                }
-            )
+    for a, b in iter_interface_cable_pairs(device_ids):
+        key = tuple(sorted([(a.device.name, a.name), (b.device.name, b.name)]))
+        if key in seen:
+            continue
+        seen.add(key)
+        links.append(
+            {
+                "name": f"link_{a.device.name}_{b.device.name}_{len(links) + 1}",
+                "a_device": a.device.name,
+                "a_iface": a.name,
+                "z_device": b.device.name,
+                "z_iface": b.name,
+            }
+        )
 
     lab_name = sanitize_lab_name(location.name)
     logger.info(

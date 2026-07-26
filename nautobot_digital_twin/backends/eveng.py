@@ -78,7 +78,7 @@ class EveNGBackend(DigitalTwinBackend):
 
     @contextmanager
     def _session(self):
-        """Authenticated requests session (cookie login)."""
+        """Authenticated requests session (cookie login). Yields conn=(session, base_url, timeout)."""
         base_url, user, password, verify_ssl, timeout = self.get_connection_params()
         session = requests.Session()
         session.verify = verify_ssl
@@ -90,7 +90,7 @@ class EveNGBackend(DigitalTwinBackend):
         if body.get("status") not in (None, "success"):
             raise RuntimeError(f"EVE-NG login failed: {body.get('message') or body}")
         try:
-            yield session, base_url, timeout
+            yield (session, base_url, timeout)
         finally:
             try:
                 session.get(urljoin(base_url + "/", "api/auth/logout"), timeout=timeout)
@@ -98,15 +98,8 @@ class EveNGBackend(DigitalTwinBackend):
                 logger.debug("EVE-NG logout ignored: %s", exc)
             session.close()
 
-    def _api(
-        self,
-        session: requests.Session,
-        base_url: str,
-        method: str,
-        path: str,
-        timeout: int,
-        payload: dict | None = None,
-    ) -> dict[str, Any]:
+    def _api(self, conn, method: str, path: str, payload: dict | None = None) -> dict[str, Any]:
+        session, base_url, timeout = conn
         url = urljoin(base_url + "/", path.lstrip("/"))
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         resp = session.request(
@@ -131,10 +124,10 @@ class EveNGBackend(DigitalTwinBackend):
     def check_health(self):
         """Check EVE-NG API reachability via /api/status."""
         try:
-            with self._session() as (session, base_url, timeout):
-                data = self._api(session, base_url, "GET", "api/status", timeout)
+            with self._session() as conn:
+                data = self._api(conn, "GET", "api/status")
                 version = (data.get("data") or {}).get("version") or "unknown"
-                return True, f"EVE-NG OK (version {version}) at {base_url}"
+                return True, f"EVE-NG OK (version {version}) at {conn[1]}"
         except Exception as exc:  # noqa: BLE001
             return False, str(exc)
 
@@ -142,8 +135,8 @@ class EveNGBackend(DigitalTwinBackend):
         """List node statuses for the Location lab."""
         lab_path = self._encode_lab_path(self._lab_path(site))
         try:
-            with self._session() as (session, base_url, timeout):
-                data = self._api(session, base_url, "GET", f"api/labs{lab_path}/nodes", timeout)
+            with self._session() as conn:
+                data = self._api(conn, "GET", f"api/labs{lab_path}/nodes")
                 nodes = data.get("data") or {}
                 lines = []
                 for node in nodes.values() if isinstance(nodes, dict) else []:
@@ -155,41 +148,39 @@ class EveNGBackend(DigitalTwinBackend):
         except Exception as exc:  # noqa: BLE001
             return 1, "", str(exc)
 
-    def _ensure_folder(self, session, base_url, timeout):
+    def _ensure_folder(self, conn):
         folder = self._lab_folder()
         if folder in {"", "/"}:
             return
-        # Create nested folders one segment at a time under /
         parts = [p for p in folder.split("/") if p]
         current = "/"
         for part in parts:
             parent = current if current != "/" else "/"
-            # List folder; create if missing
             list_path = "api/folders" if parent == "/" else f"api/folders{self._encode_lab_path(parent)}"
             try:
-                listing = self._api(session, base_url, "GET", list_path, timeout)
+                listing = self._api(conn, "GET", list_path)
             except RuntimeError:
                 listing = {"data": {"folders": {}}}
             folders = ((listing.get("data") or {}).get("folders")) or {}
             names = {str(v.get("name") if isinstance(v, dict) else k).lower() for k, v in folders.items()}
             if part.lower() not in names:
                 payload = {"path": parent if parent != "/" else "/", "name": part}
-                self._api(session, base_url, "POST", "api/folders", timeout, payload)
+                self._api(conn, "POST", "api/folders", payload)
             current = f"/{part}" if parent == "/" else f"{parent}/{part}"
 
-    def _delete_lab_if_exists(self, session, base_url, timeout, site):
+    def _delete_lab_if_exists(self, conn, site):
         lab_path = self._encode_lab_path(self._lab_path(site))
         try:
-            self._api(session, base_url, "GET", f"api/labs{lab_path}/nodes/stop", timeout)
+            self._api(conn, "GET", f"api/labs{lab_path}/nodes/stop")
         except Exception as exc:  # noqa: BLE001
             logger.debug("Stop before replace ignored for %s: %s", lab_path, exc)
         try:
-            self._api(session, base_url, "DELETE", f"api/labs{lab_path}", timeout)
+            self._api(conn, "DELETE", f"api/labs{lab_path}")
             logger.info("Deleted existing EVE-NG lab %s", lab_path)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Delete before replace ignored for %s: %s", lab_path, exc)
 
-    def _create_lab(self, session, base_url, timeout, site, lab_name):
+    def _create_lab(self, conn, site, lab_name):
         folder = self._lab_folder()
         payload = {
             "path": folder if folder != "/" else "/",
@@ -199,9 +190,9 @@ class EveNGBackend(DigitalTwinBackend):
             "description": f"Digital twin for Nautobot location {site.name}",
             "body": "Generated by nautobot-app-digital-twin",
         }
-        self._api(session, base_url, "POST", "api/labs", timeout, payload)
+        self._api(conn, "POST", "api/labs", payload)
 
-    def _add_node(self, session, base_url, timeout, lab_path, spec: dict) -> int:
+    def _add_node(self, conn, lab_path, spec: dict) -> int:
         payload = {
             "template": spec["template"],
             "type": spec.get("type", "qemu"),
@@ -215,32 +206,31 @@ class EveNGBackend(DigitalTwinBackend):
         for key in ("image", "icon", "ram", "cpu", "ethernet", "serial", "nvram", "uuid"):
             if spec.get(key) is not None:
                 payload[key] = spec[key]
-        data = self._api(session, base_url, "POST", f"api/labs{lab_path}/nodes", timeout, payload)
-        # Prefer explicit id; otherwise re-list and match by name.
+        data = self._api(conn, "POST", f"api/labs{lab_path}/nodes", payload)
         node_id = data.get("data", {}).get("id") if isinstance(data.get("data"), dict) else data.get("id")
         if node_id is not None:
             return int(node_id)
-        nodes = self._api(session, base_url, "GET", f"api/labs{lab_path}/nodes", timeout).get("data") or {}
+        nodes = self._api(conn, "GET", f"api/labs{lab_path}/nodes").get("data") or {}
         for node in nodes.values() if isinstance(nodes, dict) else []:
             if str(node.get("name", "")).lower() == str(spec.get("name", "")).lower():
                 return int(node["id"])
         raise RuntimeError(f"Could not determine EVE-NG node id for {spec.get('name')}")
 
-    def _list_networks(self, session, base_url, timeout, lab_path) -> dict:
-        data = self._api(session, base_url, "GET", f"api/labs{lab_path}/networks", timeout)
+    def _list_networks(self, conn, lab_path) -> dict:
+        data = self._api(conn, "GET", f"api/labs{lab_path}/networks")
         return data.get("data") or {}
 
-    def _add_bridge(self, session, base_url, timeout, lab_path, name: str) -> int:
-        before = set(str(k) for k in self._list_networks(session, base_url, timeout, lab_path).keys())
+    def _add_bridge(self, conn, lab_path, name: str) -> int:
+        before = set(str(k) for k in self._list_networks(conn, lab_path).keys())
         payload = {"type": "bridge", "name": name, "visibility": "0"}
-        data = self._api(session, base_url, "POST", f"api/labs{lab_path}/networks", timeout, payload)
+        data = self._api(conn, "POST", f"api/labs{lab_path}/networks", payload)
         net_id = None
         if isinstance(data.get("data"), dict):
             net_id = data["data"].get("id")
         net_id = net_id or data.get("id")
         if net_id is not None:
             return int(net_id)
-        after = self._list_networks(session, base_url, timeout, lab_path)
+        after = self._list_networks(conn, lab_path)
         for key, net in after.items():
             if str(key) not in before:
                 return int(net.get("id") or key)
@@ -248,41 +238,33 @@ class EveNGBackend(DigitalTwinBackend):
                 return int(net.get("id") or key)
         raise RuntimeError(f"Could not determine network id for bridge {name}")
 
-    def _connect_interface(self, session, base_url, timeout, lab_path, node_id: int, intf_index: int, net_id: int):
+    def _connect_interface(self, conn, lab_path, node_id: int, intf_index: int, net_id: int):
         payload = {str(intf_index): str(net_id)}
-        self._api(session, base_url, "PUT", f"api/labs{lab_path}/nodes/{node_id}/interfaces", timeout, payload)
+        self._api(conn, "PUT", f"api/labs{lab_path}/nodes/{node_id}/interfaces", payload)
 
     def _first_free_interface(self, ethernet_ifaces: list) -> tuple[int, dict] | None:
         for idx, intf in enumerate(ethernet_ifaces or []):
             if not isinstance(intf, dict):
                 return idx, {"name": str(intf)}
-            # network_id 0 means unconnected in EVE-NG
             if int(intf.get("network_id") or 0) == 0:
                 return idx, intf
         return None
 
-    def _wire_link(self, session, base_url, timeout, lab_path, node_ids: dict, link: dict, log):
+    def _ethernet_list(self, ifaces_payload: dict) -> list:
+        ethernet = (ifaces_payload or {}).get("ethernet") or []
+        if isinstance(ethernet, dict):
+            return [ethernet[k] for k in sorted(ethernet, key=int)]
+        return ethernet
+
+    def _wire_link(self, conn, lab_path, node_ids: dict, link: dict, log):
         a_name, z_name = link["a_device"], link["z_device"]
         a_id, z_id = node_ids.get(a_name), node_ids.get(z_name)
         if a_id is None or z_id is None:
             log("Skipping link %s: missing node id", link["name"])
             return
 
-        a_ifaces = (
-            self._api(session, base_url, "GET", f"api/labs{lab_path}/nodes/{a_id}/interfaces", timeout).get("data")
-            or {}
-        )
-        z_ifaces = (
-            self._api(session, base_url, "GET", f"api/labs{lab_path}/nodes/{z_id}/interfaces", timeout).get("data")
-            or {}
-        )
-        a_eth = a_ifaces.get("ethernet") or []
-        z_eth = z_ifaces.get("ethernet") or []
-        # EVE may return ethernet as dict keyed by index
-        if isinstance(a_eth, dict):
-            a_eth = [a_eth[k] for k in sorted(a_eth, key=lambda x: int(x))]
-        if isinstance(z_eth, dict):
-            z_eth = [z_eth[k] for k in sorted(z_eth, key=lambda x: int(x))]
+        a_eth = self._ethernet_list(self._api(conn, "GET", f"api/labs{lab_path}/nodes/{a_id}/interfaces").get("data"))
+        z_eth = self._ethernet_list(self._api(conn, "GET", f"api/labs{lab_path}/nodes/{z_id}/interfaces").get("data"))
 
         a_match = match_eve_interface(link["a_iface"], a_eth) or self._first_free_interface(a_eth)
         z_match = match_eve_interface(link["z_iface"], z_eth) or self._first_free_interface(z_eth)
@@ -297,9 +279,9 @@ class EveNGBackend(DigitalTwinBackend):
             )
             return
 
-        net_id = self._add_bridge(session, base_url, timeout, lab_path, link["name"])
-        self._connect_interface(session, base_url, timeout, lab_path, a_id, a_match[0], net_id)
-        self._connect_interface(session, base_url, timeout, lab_path, z_id, z_match[0], net_id)
+        net_id = self._add_bridge(conn, lab_path, link["name"])
+        self._connect_interface(conn, lab_path, a_id, a_match[0], net_id)
+        self._connect_interface(conn, lab_path, z_id, z_match[0], net_id)
         log("Linked %s:%s <-> %s:%s via bridge %s", a_name, link["a_iface"], z_name, link["z_iface"], net_id)
 
     def deploy_site(self, site, job=None, config_source="empty_config"):
@@ -320,25 +302,25 @@ class EveNGBackend(DigitalTwinBackend):
         lab_name = plan["lab_name"]
         lab_path = self._encode_lab_path(self._lab_path(site))
 
-        with self._session() as (session, base_url, timeout):
+        with self._session() as conn:
             log("Ensuring EVE-NG folder %s exists...", self._lab_folder())
-            self._ensure_folder(session, base_url, timeout)
+            self._ensure_folder(conn)
             log("Replacing any existing lab at %s...", lab_path)
-            self._delete_lab_if_exists(session, base_url, timeout, site)
+            self._delete_lab_if_exists(conn, site)
             log("Creating lab '%s'...", lab_name)
-            self._create_lab(session, base_url, timeout, site, lab_name)
+            self._create_lab(conn, site, lab_name)
 
             node_ids = {}
             for node in plan["nodes"]:
                 spec = node["spec"]
                 log("Adding node %s (template=%s)...", spec.get("name"), spec.get("template"))
-                node_ids[node["device_name"]] = self._add_node(session, base_url, timeout, lab_path, spec)
+                node_ids[node["device_name"]] = self._add_node(conn, lab_path, spec)
 
             for link in plan["links"]:
-                self._wire_link(session, base_url, timeout, lab_path, node_ids, link, log)
+                self._wire_link(conn, lab_path, node_ids, link, log)
 
             log("Starting all nodes in %s...", lab_path)
-            self._api(session, base_url, "GET", f"api/labs{lab_path}/nodes/start", timeout)
+            self._api(conn, "GET", f"api/labs{lab_path}/nodes/start")
             msg = f"EVE-NG lab deployed: {lab_path} ({len(node_ids)} nodes, {len(plan['links'])} links)"
             log(msg)
             return 0, msg, ""
@@ -346,13 +328,13 @@ class EveNGBackend(DigitalTwinBackend):
     def destroy_site(self, site):
         """Stop nodes and delete the Location lab."""
         lab_path = self._encode_lab_path(self._lab_path(site))
-        with self._session() as (session, base_url, timeout):
+        with self._session() as conn:
             try:
-                self._api(session, base_url, "GET", f"api/labs{lab_path}/nodes/stop", timeout)
+                self._api(conn, "GET", f"api/labs{lab_path}/nodes/stop")
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Stop nodes before destroy: %s", exc)
             try:
-                self._api(session, base_url, "DELETE", f"api/labs{lab_path}", timeout)
+                self._api(conn, "DELETE", f"api/labs{lab_path}")
                 return 0, f"Deleted EVE-NG lab {lab_path}", ""
             except Exception as exc:  # noqa: BLE001
                 err = str(exc).lower()

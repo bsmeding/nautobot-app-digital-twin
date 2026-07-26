@@ -7,10 +7,10 @@ import ipaddress
 import logging
 import re
 
-from django.contrib.contenttypes.models import ContentType
-from nautobot.dcim.models import Cable, Device, Interface
+from nautobot.dcim.models import Device
 
 from nautobot_digital_twin.plugin_config import get_plugin_config
+from nautobot_digital_twin.topology.cables import iter_interface_cable_pairs
 
 logger = logging.getLogger(__name__)
 
@@ -223,32 +223,16 @@ def build_containerlab_yaml(location, device_startup_configs=None, device_filter
         nodes[dev.name] = node_cfg
 
     device_ids = {dev.id for dev in devices}
-    interface_ct = ContentType.objects.get_for_model(Interface)
-    interface_ids = list(Interface.objects.filter(device__id__in=device_ids).values_list("pk", flat=True))
     links = []
     seen = set()
-    if interface_ids:
-        for cable in Cable.objects.filter(
-            termination_a_type=interface_ct,
-            termination_a_id__in=interface_ids,
-            termination_b_type=interface_ct,
-            termination_b_id__in=interface_ids,
-        ):
-            a = getattr(cable, "termination_a", None)
-            b = getattr(cable, "termination_b", None)
-            if a is None or b is None or not isinstance(a, Interface) or not isinstance(b, Interface):
-                continue
-            dev_a, if_a = a.device, a.name
-            dev_b, if_b = b.device, b.name
-            if dev_a.id not in device_ids or dev_b.id not in device_ids:
-                continue
-            endpoint_a = f"{dev_a.name}:{_nautobot_iface_to_clab(if_a)}"
-            endpoint_b = f"{dev_b.name}:{_nautobot_iface_to_clab(if_b)}"
-            key = tuple(sorted([endpoint_a, endpoint_b]))
-            if key in seen:
-                continue
-            seen.add(key)
-            links.append({"endpoints": [endpoint_a, endpoint_b]})
+    for a, b in iter_interface_cable_pairs(device_ids):
+        endpoint_a = f"{a.device.name}:{_nautobot_iface_to_clab(a.name)}"
+        endpoint_b = f"{b.device.name}:{_nautobot_iface_to_clab(b.name)}"
+        key = tuple(sorted([endpoint_a, endpoint_b]))
+        if key in seen:
+            continue
+        seen.add(key)
+        links.append({"endpoints": [endpoint_a, endpoint_b]})
 
     return _render_yaml(name, nodes, links, mgmt_subnet=mgmt_subnet)
 
@@ -284,31 +268,19 @@ def build_mermaid_topology(location):
         return "graph LR\n  %% No devices at this location\n"
 
     device_names = {dev.id: dev.name for dev in devices}
-
-    interface_ct = ContentType.objects.get_for_model(Interface)
-    interface_ids = list(Interface.objects.filter(device__location=location).values_list("pk", flat=True))
+    device_ids = set(device_names)
     edges = {}
-    if interface_ids:
-        for cable in Cable.objects.filter(
-            termination_a_type=interface_ct,
-            termination_a_id__in=interface_ids,
-            termination_b_type=interface_ct,
-            termination_b_id__in=interface_ids,
-        ):
-            a = getattr(cable, "termination_a", None)
-            b = getattr(cable, "termination_b", None)
-            if a is None or b is None or not isinstance(a, Interface) or not isinstance(b, Interface):
-                continue
-            name_a = device_names.get(a.device.id)
-            name_b = device_names.get(b.device.id)
-            if not name_a or not name_b or name_a == name_b:
-                continue
-            key = tuple(sorted((name_a, name_b)))
-            if key not in edges:
-                if name_a <= name_b:
-                    edges[key] = (name_a, name_b, a.name, b.name)
-                else:
-                    edges[key] = (name_b, name_a, b.name, a.name)
+    for a, b in iter_interface_cable_pairs(device_ids):
+        name_a = device_names.get(a.device_id)
+        name_b = device_names.get(b.device_id)
+        if not name_a or not name_b or name_a == name_b:
+            continue
+        key = tuple(sorted((name_a, name_b)))
+        if key not in edges:
+            if name_a <= name_b:
+                edges[key] = (name_a, name_b, a.name, b.name)
+            else:
+                edges[key] = (name_b, name_a, b.name, a.name)
 
     lines = ["graph LR"]
     if not edges:
