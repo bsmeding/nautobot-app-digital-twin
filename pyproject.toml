@@ -36,6 +36,9 @@ pyyaml = "*"
 paramiko = "*"
 # EVE-NG backend (REST API)
 requests = "*"
+# Security pins for transitive deps (Dependabot / GitHub Advisory Database)
+GitPython = ">=3.1.55"
+pillow = ">=12.3.0"
 
 [tool.poetry.group.dev.dependencies]
 coverage = "*"
