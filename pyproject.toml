@@ -72,7 +72,7 @@ mkdocs-material = "9.7.7"
 mkdocstrings = "1.0.6"
 mkdocstrings-python = "2.0.5"
 mkdocs-autorefs = "1.4.4"
-griffe = "1.15.0"
+griffe = "2.1.0"
 
 [tool.poetry.extras]
 all = [
