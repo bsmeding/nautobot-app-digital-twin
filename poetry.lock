@@ -5402,14 +5402,14 @@ files = [
 
 [[package]]
 name = "towncrier"
-version = "24.8.0"
+version = "25.8.0"
 description = "Building newsfiles for your project."
 optional = false
-python-versions = ">=3.8"
+python-versions = ">=3.9"
 groups = ["dev"]
 files = [
-    {file = "towncrier-24.8.0-py3-none-any.whl", hash = "sha256:9343209592b839209cdf28c339ba45792fbfe9775b5f9c177462fd693e127d8d"},
-    {file = "towncrier-24.8.0.tar.gz", hash = "sha256:013423ee7eed102b2f393c287d22d95f66f1a3ea10a4baa82d298001a7f18af3"},
+    {file = "towncrier-25.8.0-py3-none-any.whl", hash = "sha256:b953d133d98f9aeae9084b56a3563fd2519dfc6ec33f61c9cd2c61ff243fb513"},
+    {file = "towncrier-25.8.0.tar.gz", hash = "sha256:eef16d29f831ad57abb3ae32a0565739866219f1ebfbdd297d32894eb9940eb1"},
 ]
 
 [package.dependencies]
@@ -5842,4 +5842,4 @@ all = []
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.14"
-content-hash = "83323051f553d57299f4e80939387f7e3156153e49db6b0950b0c00e050bd68c"
+content-hash = "8fa681e7ceea7b7b6b47a6a64c5442b01da124e2441c4cf7ca19f1753f05320d"
