@@ -52,7 +52,7 @@ namespace = Collection("nautobot_digital_twin")
 namespace.configure(
     {
         "nautobot_digital_twin": {
-            "nautobot_ver": "3.0.0",
+            "nautobot_ver": "3.2.0",
             "project_name": "nautobot-app-digital-twin",
             "python_ver": "3.12",
             "local": False,
@@ -269,9 +269,17 @@ def lock(context, check=False, constrain_nautobot_ver=False, constrain_python_ve
             output = run_command(context, command, hide=True)
             print(output.stdout, end="")
             print(output.stderr, file=sys.stderr, end="")
-        except UnexpectedExit:
-            print("Unable to add Nautobot dependency with version constraint, falling back to git branch.")
-            command = f"poetry add --lock git+https://github.com/nautobot/nautobot.git#{context.nautobot_digital_twin.nautobot_ver}"
+        except UnexpectedExit as exc:
+            # Surface the real solver/install error (often a dependency conflict).
+            if getattr(exc, "result", None) is not None:
+                print(exc.result.stdout or "", end="")
+                print(exc.result.stderr or "", file=sys.stderr, end="")
+            print("Unable to add Nautobot dependency with version constraint, falling back to git tag.")
+            # Nautobot git tags are prefixed with "v" (e.g. v3.2.0), while docker/PyPI use 3.2.0.
+            git_ref = context.nautobot_digital_twin.nautobot_ver
+            if git_ref and not git_ref.startswith(("v", "refs/", "heads/")) and git_ref[0].isdigit():
+                git_ref = f"v{git_ref}"
+            command = f"poetry add --lock git+https://github.com/nautobot/nautobot.git#{git_ref}"
             if constrain_python_ver:
                 command += f" --python {constrain_python_ver}"
             run_command(context, command)

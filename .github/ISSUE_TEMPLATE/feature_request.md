@@ -6,7 +6,7 @@ labels:
 ---
 
 ### Environment
-* Nautobot version:  <!-- Example: 3.0.0 -->
+* Nautobot version:  <!-- Example: 3.2.0 -->
 * nautobot-app-digital-twin version:  <!-- Example: 1.0.0 -->
 
 <!--

@@ -1,7 +1,7 @@
 ---
 nautobot_digital_twin:
   project_name: "nautobot-app-digital-twin"
-  nautobot_ver: "3.0.0"
+  nautobot_ver: "3.2.0"
   local: false
   python_ver: "3.12"
   compose_dir: "development"

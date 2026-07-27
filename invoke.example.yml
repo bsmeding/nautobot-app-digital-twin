@@ -1,6 +1,6 @@
 ---
 nautobot_digital_twin:
-  nautobot_ver: "3.0.0"
+  nautobot_ver: "3.2.0"
   python_ver: "3.12"
   # local: false
   # compose_dir: "/full/path/to/nautobot-app-digital-twin/development"
