@@ -40,7 +40,7 @@ jobs:
       - name: "Check out repository code"
         uses: "actions/checkout@v7"
       - name: "Download poetry.lock artifact"
-        uses: "actions/download-artifact@v4"
+        uses: "actions/download-artifact@v8"
         with:
           name: "poetry-lock"
       - name: "Setup environment"
@@ -58,7 +58,7 @@ jobs:
       - name: "Check out repository code"
         uses: "actions/checkout@v7"
       - name: "Download poetry.lock artifact"
-        uses: "actions/download-artifact@v4"
+        uses: "actions/download-artifact@v8"
         with:
           name: "poetry-lock"
       - name: "Setup environment"
@@ -76,7 +76,7 @@ jobs:
       - name: "Check out repository code"
         uses: "actions/checkout@v7"
       - name: "Download poetry.lock artifact"
-        uses: "actions/download-artifact@v4"
+        uses: "actions/download-artifact@v8"
         with:
           name: "poetry-lock"
       - name: "Setup environment"
@@ -108,7 +108,7 @@ jobs:
       - name: "Check out repository code"
         uses: "actions/checkout@v7"
       - name: "Download poetry.lock artifact"
-        uses: "actions/download-artifact@v4"
+        uses: "actions/download-artifact@v8"
         with:
           name: "poetry-lock"
       - name: "Setup environment"
@@ -126,7 +126,7 @@ jobs:
       - name: "Check out repository code"
         uses: "actions/checkout@v7"
       - name: "Download poetry.lock artifact"
-        uses: "actions/download-artifact@v4"
+        uses: "actions/download-artifact@v8"
         with:
           name: "poetry-lock"
       - name: "Setup environment"
@@ -324,7 +324,7 @@ jobs:
         with:
           fetch-depth: "0"
       - name: "Download poetry.lock artifact"
-        uses: "actions/download-artifact@v4"
+        uses: "actions/download-artifact@v8"
         with:
           name: "poetry-lock"
       - name: "Setup environment"
