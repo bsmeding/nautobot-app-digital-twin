@@ -54,7 +54,7 @@ toml = "*"
 # Python implementation of markdownlint
 pymarkdownlnt = "~0.9.30"
 Markdown = "*"
-towncrier = ">=23.6.0,<=24.8.0"
+towncrier = ">=25.8.0,<=25.8.0"
 to-json-schema = "*"
 jsonschema = "*"
 djlint = ">=1.36.4,<2.0.0"
