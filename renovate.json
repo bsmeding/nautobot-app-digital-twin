@@ -1,0 +1,11 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "packageRules": [
+    {
+      "description": "Do not let Renovate rewrite the supported Python range or CI image to a single major (e.g. 3.14-only).",
+      "matchDatasources": ["python-version"],
+      "enabled": false
+    }
+  ]
+}
