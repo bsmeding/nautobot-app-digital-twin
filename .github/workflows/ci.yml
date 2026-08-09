@@ -297,7 +297,7 @@ jobs:
           contains(fromJson('["develop","ltm-1.6"]'), github.base_ref) &&
           (github.head_ref != 'main') && (!startsWith(github.head_ref, 'release'))
         id: "coverage_comment"
-        uses: "py-cov-action/python-coverage-comment-action@63f52f4fbbffada6e8dee8ec432de7e01df9ba79"  # v3.41
+        uses: "py-cov-action/python-coverage-comment-action@a05be3d2e8a6272d3ef5fb2840ab20368bb2eb71"  # v4.3
         with:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
           MINIMUM_GREEN: 90
